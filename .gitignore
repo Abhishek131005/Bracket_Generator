@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.*
+*.log
+coverage/
+apps/web/.vite/
+apps/api/dev.db
+apps/api/.env

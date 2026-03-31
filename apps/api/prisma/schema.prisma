@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Tournament {
+  id          String    @id @default(cuid())
+  name        String
+  sportId     Int
+  sportName   String
+  format      String
+  rankingRule String
+  status      String    @default("DRAFT")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  participants Participant[]
+  stages       Stage[]
+}
+
+model Participant {
+  id           String    @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  name         String
+  seed         Int?
+  type         String    @default("TEAM")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  fixturesAsLeft        Fixture[]          @relation("FixtureLeft")
+  fixturesAsRight       Fixture[]          @relation("FixtureRight")
+  autoAdvancedFixtures  Fixture[]          @relation("FixtureAutoAdvance")
+  performanceEntries    PerformanceEntry[]
+
+  @@unique([tournamentId, name])
+  @@index([tournamentId, seed])
+}
+
+model Stage {
+  id           String    @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  name         String
+  sequence     Int
+  format       String
+  rankingRule  String
+  status       String    @default("DRAFT")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  fixtures           Fixture[]
+  performanceEntries PerformanceEntry[]
+
+  @@unique([tournamentId, sequence])
+}
+
+model Fixture {
+  id            String    @id @default(cuid())
+  stageId       String
+  stage         Stage     @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  roundIndex    Int
+  matchIndex    Int
+  leftParticipantId String?
+  rightParticipantId String?
+  leftParticipant  Participant? @relation("FixtureLeft", fields: [leftParticipantId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  rightParticipant Participant? @relation("FixtureRight", fields: [rightParticipantId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  leftLabel     String?
+  rightLabel    String?
+  status        String    @default("SCHEDULED")
+  autoAdvanceParticipantId String?
+  autoAdvanceParticipant   Participant? @relation("FixtureAutoAdvance", fields: [autoAdvanceParticipantId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([stageId, roundIndex, matchIndex])
+  @@index([stageId, roundIndex])
+}
+
+model PerformanceEntry {
+  id             String      @id @default(cuid())
+  stageId        String
+  stage          Stage       @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  participantId  String
+  participant    Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  metricValue    Float
+  unit           String?
+  rank           Int?
+  metadata       String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([stageId, metricValue])
+}
