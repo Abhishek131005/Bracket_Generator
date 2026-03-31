@@ -4,16 +4,15 @@ import {
   SportDefinition,
   Tournament,
   TournamentParticipant,
-  TournamentStage
+  TournamentStage,
+  StageFixture,
+  StandingRow,
+  PerformanceEntry,
+  GeneratedRoundRobinStage,
 } from "./types";
 
-type ApiListResponse<T> = {
-  data: T[];
-};
-
-type ApiItemResponse<T> = {
-  data: T;
-};
+type ApiListResponse<T> = { data: T[] };
+type ApiItemResponse<T> = { data: T };
 
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -30,60 +29,52 @@ async function parseResponse<T>(response: Response): Promise<T> {
       const errorText = await response.text();
       errorMessage = errorText || `HTTP ${response.status}`;
     }
-    console.error("API Error:", { status: response.status, message: errorMessage });
     throw new Error(errorMessage);
   }
-
   return response.json() as Promise<T>;
 }
 
 export async function fetchSports(): Promise<SportDefinition[]> {
-  const response = await fetch("/api/sports");
-  const body = await parseResponse<ApiListResponse<SportDefinition>>(response);
+  const res = await fetch("/api/sports");
+  const body = await parseResponse<ApiListResponse<SportDefinition>>(res);
   return body.data;
 }
 
 export async function fetchTournaments(): Promise<Tournament[]> {
-  const response = await fetch("/api/tournaments");
-  const body = await parseResponse<ApiListResponse<Tournament>>(response);
+  const res = await fetch("/api/tournaments");
+  const body = await parseResponse<ApiListResponse<Tournament>>(res);
   return body.data;
 }
 
 export async function createTournament(payload: { name: string; sportId: number }): Promise<Tournament> {
-  const response = await fetch("/api/tournaments", {
+  const res = await fetch("/api/tournaments", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
-
-  const body = await parseResponse<ApiItemResponse<Tournament>>(response);
+  const body = await parseResponse<ApiItemResponse<Tournament>>(res);
   return body.data;
 }
 
 export async function fetchTournamentParticipants(tournamentId: string): Promise<TournamentParticipant[]> {
-  const response = await fetch(`/api/tournaments/${tournamentId}/participants`);
-  const body = await parseResponse<ApiListResponse<TournamentParticipant>>(response);
+  const res = await fetch(`/api/tournaments/${tournamentId}/participants`);
+  const body = await parseResponse<ApiListResponse<TournamentParticipant>>(res);
   return body.data;
 }
 
 export async function addParticipantsToTournament(tournamentId: string, names: string[]): Promise<TournamentParticipant[]> {
-  const response = await fetch(`/api/tournaments/${tournamentId}/participants`, {
+  const res = await fetch(`/api/tournaments/${tournamentId}/participants`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ names })
   });
-
-  const body = await parseResponse<ApiListResponse<TournamentParticipant>>(response);
+  const body = await parseResponse<ApiListResponse<TournamentParticipant>>(res);
   return body.data;
 }
 
 export async function fetchTournamentStages(tournamentId: string): Promise<TournamentStage[]> {
-  const response = await fetch(`/api/tournaments/${tournamentId}/stages`);
-  const body = await parseResponse<ApiListResponse<TournamentStage>>(response);
+  const res = await fetch(`/api/tournaments/${tournamentId}/stages`);
+  const body = await parseResponse<ApiListResponse<TournamentStage>>(res);
   return body.data;
 }
 
@@ -91,30 +82,86 @@ export async function generateSingleEliminationStageForTournament(
   tournamentId: string,
   stageName?: string
 ): Promise<GeneratedSingleEliminationStage> {
-  const response = await fetch(`/api/tournaments/${tournamentId}/stages/single-elimination`, {
+  const res = await fetch(`/api/tournaments/${tournamentId}/stages/single-elimination`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(stageName ? { stageName } : {})
   });
-
-  const body = await parseResponse<ApiItemResponse<GeneratedSingleEliminationStage>>(response);
+  const body = await parseResponse<ApiItemResponse<GeneratedSingleEliminationStage>>(res);
   return body.data;
+}
+
+export async function generateRoundRobinStageForTournament(
+  tournamentId: string,
+  stageName?: string
+): Promise<GeneratedRoundRobinStage> {
+  const res = await fetch(`/api/tournaments/${tournamentId}/stages/round-robin`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(stageName ? { stageName } : {})
+  });
+  const body = await parseResponse<ApiItemResponse<GeneratedRoundRobinStage>>(res);
+  return body.data;
+}
+
+export async function fetchStageFixtures(stageId: string): Promise<StageFixture[]> {
+  const res = await fetch(`/api/stages/${stageId}/fixtures`);
+  const body = await parseResponse<ApiListResponse<StageFixture>>(res);
+  return body.data;
+}
+
+export async function updateFixtureResult(
+  fixtureId: string,
+  homeScore: number,
+  awayScore: number
+): Promise<StageFixture> {
+  const res = await fetch(`/api/fixtures/${fixtureId}/result`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ homeScore, awayScore })
+  });
+  const body = await parseResponse<ApiItemResponse<StageFixture>>(res);
+  return body.data;
+}
+
+export async function fetchStageStandings(stageId: string): Promise<StandingRow[]> {
+  const res = await fetch(`/api/stages/${stageId}/standings`);
+  const body = await parseResponse<ApiListResponse<StandingRow>>(res);
+  return body.data;
+}
+
+export async function fetchStagePerformances(stageId: string): Promise<PerformanceEntry[]> {
+  const res = await fetch(`/api/stages/${stageId}/performances`);
+  const body = await parseResponse<ApiListResponse<PerformanceEntry>>(res);
+  return body.data;
+}
+
+export async function addPerformanceEntry(
+  stageId: string,
+  participantId: string,
+  metricValue: number,
+  unit?: string
+): Promise<PerformanceEntry> {
+  const res = await fetch(`/api/stages/${stageId}/performances`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ participantId, metricValue, unit })
+  });
+  const body = await parseResponse<ApiItemResponse<PerformanceEntry>>(res);
+  return body.data;
+}
+
+export async function deletePerformanceEntry(entryId: string): Promise<void> {
+  const res = await fetch(`/api/performances/${entryId}`, { method: "DELETE" });
+  await parseResponse<{ message: string }>(res);
 }
 
 export async function generateSingleEliminationBracket(participants: string[]): Promise<SingleEliminationBracket> {
-  const response = await fetch("/api/brackets/single-elimination", {
+  const res = await fetch("/api/brackets/single-elimination", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      participants: participants.map((name) => ({ name }))
-    })
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ participants: participants.map((name) => ({ name })) })
   });
-
-  const body = await parseResponse<ApiItemResponse<SingleEliminationBracket>>(response);
+  const body = await parseResponse<ApiItemResponse<SingleEliminationBracket>>(res);
   return body.data;
 }
-

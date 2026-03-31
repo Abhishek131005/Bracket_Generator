@@ -71,6 +71,8 @@ model Fixture {
   rightParticipant Participant? @relation("FixtureRight", fields: [rightParticipantId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   leftLabel     String?
   rightLabel    String?
+  leftScore     Int?
+  rightScore    Int?
   status        String    @default("SCHEDULED")
   autoAdvanceParticipantId String?
   autoAdvanceParticipant   Participant? @relation("FixtureAutoAdvance", fields: [autoAdvanceParticipantId], references: [id], onDelete: SetNull, onUpdate: Cascade)
