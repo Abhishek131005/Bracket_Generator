@@ -7,3 +7,4 @@ coverage/
 apps/web/.vite/
 apps/api/dev.db
 apps/api/.env
+*.tsbuildinfo
