@@ -502,8 +502,10 @@ function CreatePage({
       onCreated(t);
       setTournamentName("");
       setSelectedSportId("");
-    } catch {
-      setError("Could not create tournament. Check API is running.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not create tournament. Check API is running.";
+      setError(message);
+      console.error("Create tournament error:", err);
     } finally {
       setIsSaving(false);
     }

@@ -17,8 +17,21 @@ type ApiItemResponse<T> = {
 
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || "Request failed.");
+    let errorMessage = "Request failed.";
+    try {
+      const errorBody = await response.json();
+      if (errorBody.message) {
+        errorMessage = errorBody.message;
+        if (errorBody.issues) {
+          errorMessage += " Issues: " + JSON.stringify(errorBody.issues);
+        }
+      }
+    } catch {
+      const errorText = await response.text();
+      errorMessage = errorText || `HTTP ${response.status}`;
+    }
+    console.error("API Error:", { status: response.status, message: errorMessage });
+    throw new Error(errorMessage);
   }
 
   return response.json() as Promise<T>;
