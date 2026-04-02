@@ -395,6 +395,15 @@ export async function generateDoubleEliminationStage(input: GenerateStageInput):
   const participantByName = new Map<string, any>();
   tournament.participants.forEach((p: any) => participantByName.set(p.name, p));
 
+  const winnersRoundCount = bracket.winnersRounds.length;
+  const losersRoundCount = bracket.losersRounds.length;
+
+  const roundOffsetByBracket: Record<"WINNERS" | "LOSERS" | "GRAND_FINAL", number> = {
+    WINNERS: 0,
+    LOSERS: winnersRoundCount,
+    GRAND_FINAL: winnersRoundCount + losersRoundCount,
+  };
+
   // Flatten all rounds from the bracket and persist
   const allMatches = bracket.allRounds.flatMap((round) =>
     round.matches.map((match) => {
@@ -406,7 +415,7 @@ export async function generateDoubleEliminationStage(input: GenerateStageInput):
 
       return {
         stageId: stage.id,
-        roundIndex: match.roundIndex,
+        roundIndex: roundOffsetByBracket[match.bracket] + match.roundIndex,
         matchIndex: match.matchIndex,
         leftParticipantId: leftP?.id ?? null,
         rightParticipantId: rightP?.id ?? null,
@@ -414,12 +423,6 @@ export async function generateDoubleEliminationStage(input: GenerateStageInput):
         rightLabel: match.rightLabel,
         status: match.status as string,
         autoAdvanceParticipantId: autoP?.id ?? null,
-        // Store bracket section in metadata via leftLabel prefix trick — 
-        // we store bracket type in a custom field. Since Prisma schema doesn't 
-        // have a `bracket` column yet, we encode it in the match id prefix stored as leftLabel note.
-        // For clean implementation, store bracket type in matchIndex offset:
-        // WB: roundIndex as-is, LB: roundIndex + 100, GF: roundIndex + 200
-        // We use a naming convention on the fixture id stored separately.
       };
     })
   );
