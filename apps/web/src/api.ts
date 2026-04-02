@@ -1,6 +1,10 @@
 import {
   GeneratedSingleEliminationStage,
+  GeneratedDoubleEliminationStage,
+  GeneratedSwissStage,
+  GeneratedLeaguePlusPlayoffStage,
   SingleEliminationBracket,
+  DoubleEliminationBracket,
   SportDefinition,
   Tournament,
   TournamentParticipant,
@@ -50,7 +54,7 @@ export async function createTournament(payload: { name: string; sportId: number 
   const res = await fetch("/api/tournaments", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
   const body = await parseResponse<ApiItemResponse<Tournament>>(res);
   return body.data;
@@ -62,11 +66,14 @@ export async function fetchTournamentParticipants(tournamentId: string): Promise
   return body.data;
 }
 
-export async function addParticipantsToTournament(tournamentId: string, names: string[]): Promise<TournamentParticipant[]> {
+export async function addParticipantsToTournament(
+  tournamentId: string,
+  names: string[]
+): Promise<TournamentParticipant[]> {
   const res = await fetch(`/api/tournaments/${tournamentId}/participants`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ names })
+    body: JSON.stringify({ names }),
   });
   const body = await parseResponse<ApiListResponse<TournamentParticipant>>(res);
   return body.data;
@@ -85,7 +92,7 @@ export async function generateSingleEliminationStageForTournament(
   const res = await fetch(`/api/tournaments/${tournamentId}/stages/single-elimination`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(stageName ? { stageName } : {})
+    body: JSON.stringify(stageName ? { stageName } : {}),
   });
   const body = await parseResponse<ApiItemResponse<GeneratedSingleEliminationStage>>(res);
   return body.data;
@@ -98,9 +105,77 @@ export async function generateRoundRobinStageForTournament(
   const res = await fetch(`/api/tournaments/${tournamentId}/stages/round-robin`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(stageName ? { stageName } : {})
+    body: JSON.stringify(stageName ? { stageName } : {}),
   });
   const body = await parseResponse<ApiItemResponse<GeneratedRoundRobinStage>>(res);
+  return body.data;
+}
+
+export async function generateDoubleEliminationStageForTournament(
+  tournamentId: string,
+  stageName?: string
+): Promise<GeneratedDoubleEliminationStage> {
+  const res = await fetch(`/api/tournaments/${tournamentId}/stages/double-elimination`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(stageName ? { stageName } : {}),
+  });
+  const body = await parseResponse<ApiItemResponse<GeneratedDoubleEliminationStage>>(res);
+  return body.data;
+}
+
+export async function generateSwissStageForTournament(
+  tournamentId: string,
+  stageName?: string,
+  totalRounds?: number
+): Promise<GeneratedSwissStage> {
+  const res = await fetch(`/api/tournaments/${tournamentId}/stages/swiss`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...(stageName ? { stageName } : {}), ...(totalRounds ? { totalRounds } : {}) }),
+  });
+  const body = await parseResponse<ApiItemResponse<GeneratedSwissStage>>(res);
+  return body.data;
+}
+
+export async function generateLeaguePlusPlayoffStageForTournament(
+  tournamentId: string,
+  stageName?: string
+): Promise<GeneratedLeaguePlusPlayoffStage> {
+  const res = await fetch(`/api/tournaments/${tournamentId}/stages/league-plus-playoff`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(stageName ? { stageName } : {}),
+  });
+  const body = await parseResponse<ApiItemResponse<GeneratedLeaguePlusPlayoffStage>>(res);
+  return body.data;
+}
+
+export async function generatePlayoffStage(
+  tournamentId: string,
+  leagueStageId: string,
+  playoffTeamCount: number,
+  stageName?: string
+): Promise<GeneratedSingleEliminationStage> {
+  const res = await fetch(`/api/tournaments/${tournamentId}/stages/playoff`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ leagueStageId, playoffTeamCount, ...(stageName ? { stageName } : {}) }),
+  });
+  const body = await parseResponse<ApiItemResponse<GeneratedSingleEliminationStage>>(res);
+  return body.data;
+}
+
+export async function regenerateSwissRoundPairings(
+  stageId: string,
+  roundIndex: number
+): Promise<StageFixture[]> {
+  const res = await fetch(`/api/stages/${stageId}/swiss/pair-round`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roundIndex }),
+  });
+  const body = await parseResponse<ApiListResponse<StageFixture>>(res);
   return body.data;
 }
 
@@ -118,7 +193,7 @@ export async function updateFixtureResult(
   const res = await fetch(`/api/fixtures/${fixtureId}/result`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ homeScore, awayScore })
+    body: JSON.stringify({ homeScore, awayScore }),
   });
   const body = await parseResponse<ApiItemResponse<StageFixture>>(res);
   return body.data;
@@ -145,7 +220,7 @@ export async function addPerformanceEntry(
   const res = await fetch(`/api/stages/${stageId}/performances`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ participantId, metricValue, unit })
+    body: JSON.stringify({ participantId, metricValue, unit }),
   });
   const body = await parseResponse<ApiItemResponse<PerformanceEntry>>(res);
   return body.data;
@@ -156,12 +231,26 @@ export async function deletePerformanceEntry(entryId: string): Promise<void> {
   await parseResponse<{ message: string }>(res);
 }
 
-export async function generateSingleEliminationBracket(participants: string[]): Promise<SingleEliminationBracket> {
+export async function generateSingleEliminationBracket(
+  participants: string[]
+): Promise<SingleEliminationBracket> {
   const res = await fetch("/api/brackets/single-elimination", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ participants: participants.map((name) => ({ name })) })
+    body: JSON.stringify({ participants: participants.map((name) => ({ name })) }),
   });
   const body = await parseResponse<ApiItemResponse<SingleEliminationBracket>>(res);
+  return body.data;
+}
+
+export async function generateDoubleEliminationBracket(
+  participants: string[]
+): Promise<DoubleEliminationBracket> {
+  const res = await fetch("/api/brackets/double-elimination", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ participants: participants.map((name) => ({ name })) }),
+  });
+  const body = await parseResponse<ApiItemResponse<DoubleEliminationBracket>>(res);
   return body.data;
 }

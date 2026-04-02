@@ -22,6 +22,8 @@ export interface Tournament {
   updatedAt: string;
 }
 
+// ── Single Elimination ────────────────────────────────────────────────────────
+
 export interface BracketSide {
   seed: number | null;
   participantName: string | null;
@@ -50,6 +52,87 @@ export interface SingleEliminationBracket {
   byeCount: number;
   rounds: BracketRound[];
 }
+
+// ── Double Elimination ────────────────────────────────────────────────────────
+
+export interface DEMatch {
+  id: string;
+  bracket: "WINNERS" | "LOSERS" | "GRAND_FINAL";
+  roundIndex: number;
+  matchIndex: number;
+  leftLabel: string | null;
+  rightLabel: string | null;
+  leftSeed: number | null;
+  rightSeed: number | null;
+  status: "SCHEDULED" | "PENDING" | "AUTO_ADVANCE";
+  autoAdvanceWinner: string | null;
+  winnerGoesTo: string | null;
+  loserGoesTo: string | null;
+}
+
+export interface DERound {
+  roundIndex: number;
+  bracket: "WINNERS" | "LOSERS" | "GRAND_FINAL";
+  title: string;
+  matches: DEMatch[];
+}
+
+export interface DoubleEliminationBracket {
+  format: "DOUBLE_ELIMINATION";
+  participantCount: number;
+  slots: number;
+  byeCount: number;
+  winnersRounds: DERound[];
+  losersRounds: DERound[];
+  grandFinal: DERound;
+  allRounds: DERound[];
+}
+
+// ── Swiss ─────────────────────────────────────────────────────────────────────
+
+export interface SwissMatch {
+  id: string;
+  roundIndex: number;
+  matchIndex: number;
+  homeParticipantId: string | null;
+  awayParticipantId: string | null;
+  homeLabel: string | null;
+  awayLabel: string | null;
+  isBye: boolean;
+}
+
+export interface SwissRound {
+  roundIndex: number;
+  title: string;
+  matches: SwissMatch[];
+}
+
+export interface SwissSchedule {
+  format: "SWISS";
+  participantCount: number;
+  totalRounds: number;
+  totalMatches: number;
+  rounds: SwissRound[];
+}
+
+// ── Round Robin ───────────────────────────────────────────────────────────────
+
+export interface RoundRobinMatch {
+  roundIndex: number;
+  matchIndex: number;
+  homeParticipantId: string;
+  awayParticipantId: string;
+  homeLabel: string;
+  awayLabel: string;
+  isBye: boolean;
+}
+
+export interface RoundRobinRound {
+  roundIndex: number;
+  matches: RoundRobinMatch[];
+}
+
+// ── Participants & Stages ─────────────────────────────────────────────────────
 
 export interface TournamentParticipant {
   id: string;
@@ -81,7 +164,10 @@ export interface StageFixture {
   rightScore: number | null;
   status: string;
   autoAdvanceParticipantId: string | null;
+  bracket?: string | null;
 }
+
+// ── Generated Stage Responses ─────────────────────────────────────────────────
 
 export interface GeneratedSingleEliminationStage {
   stage: TournamentStage;
@@ -89,19 +175,26 @@ export interface GeneratedSingleEliminationStage {
   bracket: SingleEliminationBracket;
 }
 
-export interface RoundRobinMatch {
-  roundIndex: number;
-  matchIndex: number;
-  homeParticipantId: string;
-  awayParticipantId: string;
-  homeLabel: string;
-  awayLabel: string;
-  isBye: boolean;
+export interface GeneratedDoubleEliminationStage {
+  stage: TournamentStage;
+  fixtures: StageFixture[];
+  bracket: DoubleEliminationBracket;
 }
 
-export interface RoundRobinRound {
-  roundIndex: number;
-  matches: RoundRobinMatch[];
+export interface GeneratedSwissStage {
+  stage: TournamentStage;
+  fixtures: StageFixture[];
+  schedule: SwissSchedule;
+}
+
+export interface GeneratedLeaguePlusPlayoffStage {
+  leagueStage: TournamentStage;
+  leagueFixtures: StageFixture[];
+  leagueSchedule: {
+    participantCount: number;
+    totalRounds: number;
+    rounds: RoundRobinRound[];
+  };
 }
 
 export interface GeneratedRoundRobinStage {
@@ -109,10 +202,12 @@ export interface GeneratedRoundRobinStage {
   fixtures: StageFixture[];
   schedule: {
     participantCount: number;
-    roundCount: number;
+    totalRounds: number;
     rounds: RoundRobinRound[];
   };
 }
+
+// ── Standings & Leaderboard ───────────────────────────────────────────────────
 
 export interface StandingRow {
   participantId: string;
@@ -139,4 +234,3 @@ export interface PerformanceEntry {
   metadata: string | null;
   createdAt: string;
 }
-
