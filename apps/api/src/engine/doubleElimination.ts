@@ -16,7 +16,7 @@ export interface DEMatch {
   rightLabel: string | null;
   leftSeed: number | null;
   rightSeed: number | null;
-  status: "SCHEDULED" | "PENDING" | "AUTO_ADVANCE";
+  status: "SCHEDULED" | "PENDING" | "AUTO_ADVANCE" | "COMPLETED";
   autoAdvanceWinner: string | null;
   winnerGoesTo: string | null;
   loserGoesTo: string | null;
@@ -44,6 +44,10 @@ function nextPow2(n: number): number {
   return 2 ** Math.ceil(Math.log2(n));
 }
 
+function losersRoundMatchCount(slots: number, losersRoundIndex: number): number {
+  return Math.max(1, slots / 2 ** (Math.ceil(losersRoundIndex / 2) + 1));
+}
+
 export function buildDoubleEliminationBracket(
   participantsInput: Array<{ name: string; seed?: number }>
 ): DoubleEliminationBracket {
@@ -58,6 +62,7 @@ export function buildDoubleEliminationBracket(
   const slots = nextPow2(normalized.length);
   const byeCount = slots - normalized.length;
   const wbRoundCount = Math.log2(slots);
+  const lbRoundCount = Math.max(0, 2 * (wbRoundCount - 1));
 
   // ── Winners Bracket ────────────────────────────────────────────────────────
   const winnersRounds: DERound[] = [];
@@ -70,6 +75,20 @@ export function buildDoubleEliminationBracket(
     const left = normalized[leftSeed - 1] ?? null;
     const right = normalized[rightSeed - 1] ?? null;
     const isBye = Boolean(left) !== Boolean(right);
+    const isFinal = wbRoundCount === 1;
+
+    const winnerGoesTo = isFinal
+      ? "GF1M1"
+      : `WR2M${Math.floor(i / 2) + 1}`;
+
+    const loserGoesTo = isBye
+      ? null
+      : isFinal
+      ? lbRoundCount > 0
+        ? `LR${lbRoundCount}M1`
+        : "GF1M1"
+      : `LR1M${Math.floor(i / 2) + 1}`;
+
     r1Matches.push({
       id: `WR1M${i + 1}`,
       bracket: "WINNERS",
@@ -81,8 +100,8 @@ export function buildDoubleEliminationBracket(
       rightSeed: right ? rightSeed : null,
       status: isBye ? "AUTO_ADVANCE" : "SCHEDULED",
       autoAdvanceWinner: isBye ? (left?.name ?? right?.name ?? null) : null,
-      winnerGoesTo: matchesInR1 === 1 ? "GF1M1" : `WR2M${Math.floor(i / 2) + 1}`,
-      loserGoesTo: isBye ? null : `LR1M${i + 1}`,
+      winnerGoesTo,
+      loserGoesTo,
     });
   }
 
@@ -116,7 +135,11 @@ export function buildDoubleEliminationBracket(
         status: "PENDING",
         autoAdvanceWinner: null,
         winnerGoesTo: isFinal ? "GF1M1" : `WR${r + 1}M${Math.floor(i / 2) + 1}`,
-        loserGoesTo: isFinal ? "GF1M1" : `LR${2 * r - 2}M${i + 1}`,
+        loserGoesTo: isFinal
+          ? lbRoundCount > 0
+            ? `LR${lbRoundCount}M1`
+            : "GF1M1"
+          : `LR${2 * r - 2}M${i + 1}`,
       });
     }
     const roundSize = matchCount * 2;
@@ -134,12 +157,18 @@ export function buildDoubleEliminationBracket(
 
   // ── Losers Bracket ─────────────────────────────────────────────────────────
   const losersRounds: DERound[] = [];
-  const lbRoundCount = 2 * (wbRoundCount - 1);
 
   for (let lr = 1; lr <= lbRoundCount; lr++) {
-    const matchCount = Math.max(1, slots / 2 ** (Math.ceil(lr / 2) + 1));
+    const matchCount = losersRoundMatchCount(slots, lr);
     const isLast = lr === lbRoundCount;
+    const nextMatchCount = isLast ? 1 : losersRoundMatchCount(slots, lr + 1);
     const matches: DEMatch[] = [];
+
+    // Pattern alternates:
+    // - If next round has same match count -> one-to-one mapping
+    // - If next round has half the matches -> two-to-one mapping
+    const oneToOneAdvance = nextMatchCount === matchCount;
+
     for (let i = 0; i < matchCount; i++) {
       matches.push({
         id: `LR${lr}M${i + 1}`,
@@ -152,7 +181,11 @@ export function buildDoubleEliminationBracket(
         rightSeed: null,
         status: "PENDING",
         autoAdvanceWinner: null,
-        winnerGoesTo: isLast ? "GF1M1" : `LR${lr + 1}M${Math.floor(i / 2) + 1}`,
+        winnerGoesTo: isLast
+          ? "GF1M1"
+          : oneToOneAdvance
+          ? `LR${lr + 1}M${i + 1}`
+          : `LR${lr + 1}M${Math.floor(i / 2) + 1}`,
         loserGoesTo: null,
       });
     }
@@ -182,7 +215,8 @@ export function buildDoubleEliminationBracket(
         status: "PENDING",
         autoAdvanceWinner: null,
         winnerGoesTo: null,
-        loserGoesTo: "GF1M2",
+        // Reset is conditional: only activate GF2 if LB finalist wins GF1.
+        loserGoesTo: null,
       },
       {
         id: "GF1M2",

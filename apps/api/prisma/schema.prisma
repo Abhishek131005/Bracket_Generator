@@ -63,6 +63,8 @@ model Fixture {
   id            String    @id @default(cuid())
   stageId       String
   stage         Stage     @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  code          String?
+  bracket       String?
   roundIndex    Int
   matchIndex    Int
   leftParticipantId String?
@@ -71,6 +73,8 @@ model Fixture {
   rightParticipant Participant? @relation("FixtureRight", fields: [rightParticipantId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   leftLabel     String?
   rightLabel    String?
+  winnerGoesTo  String?
+  loserGoesTo   String?
   leftScore     Int?
   rightScore    Int?
   status        String    @default("SCHEDULED")

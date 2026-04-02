@@ -64,7 +64,7 @@ export interface DEMatch {
   rightLabel: string | null;
   leftSeed: number | null;
   rightSeed: number | null;
-  status: "SCHEDULED" | "PENDING" | "AUTO_ADVANCE";
+  status: "SCHEDULED" | "PENDING" | "AUTO_ADVANCE" | "COMPLETED";
   autoAdvanceWinner: string | null;
   winnerGoesTo: string | null;
   loserGoesTo: string | null;
@@ -154,6 +154,7 @@ export interface TournamentStage {
 
 export interface StageFixture {
   id: string;
+  code?: string | null;
   roundIndex: number;
   matchIndex: number;
   leftParticipantId: string | null;
@@ -165,6 +166,8 @@ export interface StageFixture {
   status: string;
   autoAdvanceParticipantId: string | null;
   bracket?: string | null;
+  winnerGoesTo?: string | null;
+  loserGoesTo?: string | null;
 }
 
 // ── Generated Stage Responses ─────────────────────────────────────────────────

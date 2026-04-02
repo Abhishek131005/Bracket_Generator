@@ -101,6 +101,179 @@ const METRIC_UNIT: Record<string, string> = {
   AGGREGATE_POINTS_DESC: "pts",
 };
 
+// ── DE Bracket reconstruction from fixtures ───────────────────────────────────
+
+/**
+ * Reconstruct a DoubleEliminationBracket from persisted fixtures.
+ *
+ * The repository stores DE fixtures with a global roundIndex built from offsets:
+ *   Winners rounds   → roundIndex 1..wbCount
+ *   Losers rounds    → roundIndex wbCount+1 .. wbCount+lbCount
+ *   Grand Final      → roundIndex wbCount+lbCount+1 .. (2 matches)
+ *
+ * We detect section boundaries by counting: WB has ceil(log2(slots)) rounds,
+ * LB has 2*(wbRounds-1) rounds, GF has 1 round (2 matches stored as roundIndex+1).
+ *
+ * Because we don't always know slots from fixtures alone we infer wbRounds as the
+ * largest contiguous block before LB starts — we use match counts as the signal:
+ * WB match counts halve each round, LB match counts follow a different pattern.
+ * Simplest safe approach: ask the API for the bracket structure once and cache it,
+ * OR just re-derive from what we know.
+ *
+ * Practical approach used here: store the generated bracket in component state when
+ * the stage is first generated, AND re-fetch fixtures for label/score overlays.
+ * For existing sessions (page reload) we call the stateless /api/brackets/double-elimination
+ * endpoint to rebuild structure, then overlay fixture labels & scores.
+ */
+function buildDEBracketFromFixtures(
+  fixtures: StageFixture[],
+  participantCount: number
+): DoubleEliminationBracket | null {
+  if (!fixtures.length) return null;
+
+  const slots = Math.pow(2, Math.ceil(Math.log2(Math.max(participantCount, 2))));
+  const wbRoundCount = Math.log2(slots); // e.g. 8 participants → 3 WB rounds
+  const lbRoundCount = 2 * (wbRoundCount - 1);
+
+  // Sort fixtures by roundIndex then matchIndex
+  const sorted = [...fixtures].sort((a, b) =>
+    a.roundIndex !== b.roundIndex ? a.roundIndex - b.roundIndex : a.matchIndex - b.matchIndex
+  );
+
+  // Group by roundIndex
+  const byRound = new Map<number, StageFixture[]>();
+  for (const f of sorted) {
+    if (!byRound.has(f.roundIndex)) byRound.set(f.roundIndex, []);
+    byRound.get(f.roundIndex)!.push(f);
+  }
+
+  const allRoundIndices = Array.from(byRound.keys()).sort((a, b) => a - b);
+
+  // Helper: convert fixtures in a round to DEMatch objects
+  const toMatches = (
+    roundFixtures: StageFixture[],
+    bracket: "WINNERS" | "LOSERS" | "GRAND_FINAL",
+    localRoundIndex: number
+  ) =>
+    roundFixtures.map((f) => ({
+      id: f.id,
+      bracket,
+      roundIndex: localRoundIndex,
+      matchIndex: f.matchIndex,
+      leftLabel: f.leftLabel,
+      rightLabel: f.rightLabel,
+      leftSeed: null,
+      rightSeed: null,
+      status: f.status as "SCHEDULED" | "PENDING" | "AUTO_ADVANCE" | "COMPLETED",
+      autoAdvanceWinner: f.status === "AUTO_ADVANCE"
+        ? (f.leftLabel && f.leftLabel !== "TBD" ? f.leftLabel : f.rightLabel ?? null)
+        : null,
+      winnerGoesTo: null,
+      loserGoesTo: null,
+      // Extra display fields
+      _leftScore: f.leftScore,
+      _rightScore: f.rightScore,
+      _winner:
+        f.status === "COMPLETED" && f.leftScore !== null && f.rightScore !== null
+          ? f.leftScore > f.rightScore
+            ? f.leftLabel
+            : f.rightScore > f.leftScore
+            ? f.rightLabel
+            : null
+          : f.status === "AUTO_ADVANCE"
+          ? (f.leftLabel && f.leftLabel !== "TBD" ? f.leftLabel : f.rightLabel ?? null)
+          : null,
+    }));
+
+  // Build WB rounds (global roundIndex 1..wbRoundCount)
+  const winnersRounds: DERound[] = [];
+  for (let r = 1; r <= wbRoundCount; r++) {
+    const roundFixtures = byRound.get(r) ?? [];
+    const matchCount = roundFixtures.length;
+    const roundSize = matchCount * 2;
+    const isFinal = r === wbRoundCount;
+    const isSemi = r === wbRoundCount - 1;
+    const title = isFinal
+      ? "Winners Final"
+      : isSemi
+      ? "Winners Semi Final"
+      : `Round of ${roundSize}`;
+    winnersRounds.push({
+      roundIndex: r,
+      bracket: "WINNERS",
+      title,
+      matches: toMatches(roundFixtures, "WINNERS", r) as any,
+    });
+  }
+
+  // Build LB rounds (global roundIndex wbRoundCount+1 .. wbRoundCount+lbRoundCount)
+  const losersRounds: DERound[] = [];
+  for (let lr = 1; lr <= lbRoundCount; lr++) {
+    const globalIdx = wbRoundCount + lr;
+    const roundFixtures = byRound.get(globalIdx) ?? [];
+    const isLast = lr === lbRoundCount;
+    const title = isLast ? "Losers Final" : `Losers Round ${lr}`;
+    losersRounds.push({
+      roundIndex: lr,
+      bracket: "LOSERS",
+      title,
+      matches: toMatches(roundFixtures, "LOSERS", lr) as any,
+    });
+  }
+
+  // Grand Final: two matches stored at consecutive roundIndex values
+  const gfRound1Idx = wbRoundCount + lbRoundCount + 1;
+  const gfRound2Idx = gfRound1Idx + 1;
+  const gfFixtures1 = byRound.get(gfRound1Idx) ?? [];
+  const gfFixtures2 = byRound.get(gfRound2Idx) ?? [];
+  const gfAllFixtures = [
+    ...gfFixtures1.map((f) => ({ ...f, _gfMatch: 1 })),
+    ...gfFixtures2.map((f) => ({ ...f, _gfMatch: 2 })),
+  ];
+
+  // Represent GF as a single DERound with up to 2 matches (bracket reset)
+  const grandFinal: DERound = {
+    roundIndex: 1,
+    bracket: "GRAND_FINAL",
+    title: "Grand Final",
+    matches: gfAllFixtures.map((f, i) => ({
+      id: f.id,
+      bracket: "GRAND_FINAL" as const,
+      roundIndex: 1,
+      matchIndex: i + 1,
+      leftLabel: f.leftLabel,
+      rightLabel: f.rightLabel,
+      leftSeed: null,
+      rightSeed: null,
+      status: f.status as "SCHEDULED" | "PENDING" | "AUTO_ADVANCE" | "COMPLETED",
+      autoAdvanceWinner: null,
+      winnerGoesTo: null,
+      loserGoesTo: null,
+      _leftScore: f.leftScore,
+      _rightScore: f.rightScore,
+      _winner:
+        f.status === "COMPLETED" && f.leftScore !== null && f.rightScore !== null
+          ? f.leftScore > f.rightScore
+            ? f.leftLabel
+            : f.rightScore > f.leftScore
+            ? f.rightLabel
+            : null
+          : null,
+    })) as any,
+  };
+
+  return {
+    format: "DOUBLE_ELIMINATION",
+    participantCount,
+    slots,
+    byeCount: slots - participantCount,
+    winnersRounds,
+    losersRounds,
+    grandFinal,
+    allRounds: [...winnersRounds, ...losersRounds, grandFinal],
+  };
+}
+
 // ── Bracket reconstruction from fixtures ─────────────────────────────────────
 
 /**
@@ -595,42 +768,65 @@ function DEBracketCanvas({ bracket }: { bracket: DoubleEliminationBracket }) {
         const x = getMatchX(rIdx); const y = getMatchY(spec, rIdx, mIdx);
         const isGF = round.bracket === "GRAND_FINAL";
         const isAuto = match.status === "AUTO_ADVANCE";
+        const isDone = match.status === "COMPLETED";
         const accent = spec.accent;
+        const ext = match as any;
+        const winner = ext._winner as string | null;
+        const leftScore = ext._leftScore as number | null;
+        const rightScore = ext._rightScore as number | null;
         const hasLeft = !!match.leftLabel && match.leftLabel !== "TBD";
         const hasRight = !!match.rightLabel && match.rightLabel !== "TBD";
+        const leftIsWinner = (isDone || isAuto) && winner === match.leftLabel;
+        const rightIsWinner = (isDone || isAuto) && winner === match.rightLabel;
         return (
           <motion.g key={`card-${spec.label}-${match.id}-${rIdx}-${mIdx}`}
             initial={{ opacity: 0, scale: 0.88 }} animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.05 + rIdx * 0.07 + mIdx * 0.04, duration: 0.25, type: "spring" }}>
             <rect x={x} y={y} width={MATCH_W} height={MATCH_H} rx={9}
               fill={isGF ? "rgba(244,211,94,0.08)" : "rgba(255,255,255,0.05)"}
-              stroke={isGF ? "rgba(244,211,94,0.55)" : isAuto ? `${accent}50` : `${accent}2a`}
+              stroke={isGF ? "rgba(244,211,94,0.55)" : isDone ? `${accent}50` : isAuto ? `${accent}50` : `${accent}2a`}
               strokeWidth={isGF ? 1.5 : 1} />
+            {/* Winner highlight — top row */}
+            {leftIsWinner && (
+              <rect x={x + 1} y={y + 1} width={MATCH_W - 2} height={MATCH_H / 2 - 1} rx={8}
+                fill={`${accent}28`} />
+            )}
+            {/* Winner highlight — bottom row */}
+            {rightIsWinner && (
+              <rect x={x + 1} y={y + MATCH_H / 2} width={MATCH_W - 2} height={MATCH_H / 2 - 1} rx={8}
+                fill={`${accent}28`} />
+            )}
             <rect x={x} y={y + 3} width={3} height={MATCH_H - 6} rx={1.5} fill={`${accent}70`} />
             <line x1={x + 10} y1={y + MATCH_H / 2} x2={x + MATCH_W - 10} y2={y + MATCH_H / 2}
               stroke="rgba(255,255,255,0.07)" strokeWidth="1" />
-            {match.leftSeed != null && (
-              <text x={x + 13} y={y + MATCH_H / 2 - 13} fill={accent} fontSize="8.5"
-                fontFamily="'Space Mono', monospace" fontWeight="700" dominantBaseline="middle">
-                S{match.leftSeed}
-              </text>
-            )}
-            {match.rightSeed != null && (
-              <text x={x + 13} y={y + MATCH_H / 2 + 13} fill={accent} fontSize="8.5"
-                fontFamily="'Space Mono', monospace" fontWeight="700" dominantBaseline="middle">
-                S{match.rightSeed}
-              </text>
-            )}
-            <text x={x + (match.leftSeed != null ? 34 : 13)} y={y + MATCH_H / 2 - 13}
-              fill={hasLeft ? "#f0ede5" : "rgba(255,255,255,0.27)"} fontSize="11.5"
-              fontFamily="'Manrope', sans-serif" fontWeight={hasLeft ? "600" : "400"} dominantBaseline="middle">
+            <text x={x + 13} y={y + MATCH_H / 2 - 13}
+              fill={leftIsWinner ? accent : hasLeft ? "#f0ede5" : "rgba(255,255,255,0.27)"} fontSize="11.5"
+              fontFamily="'Manrope', sans-serif" fontWeight={leftIsWinner ? "800" : hasLeft ? "600" : "400"} dominantBaseline="middle">
               {(match.leftLabel ?? "TBD").slice(0, 22)}
             </text>
-            <text x={x + (match.rightSeed != null ? 34 : 13)} y={y + MATCH_H / 2 + 13}
-              fill={hasRight ? "#f0ede5" : "rgba(255,255,255,0.27)"} fontSize="11.5"
-              fontFamily="'Manrope', sans-serif" fontWeight={hasRight ? "600" : "400"} dominantBaseline="middle">
+            <text x={x + 13} y={y + MATCH_H / 2 + 13}
+              fill={rightIsWinner ? accent : hasRight ? "#f0ede5" : "rgba(255,255,255,0.27)"} fontSize="11.5"
+              fontFamily="'Manrope', sans-serif" fontWeight={rightIsWinner ? "800" : hasRight ? "600" : "400"} dominantBaseline="middle">
               {(match.rightLabel ?? "TBD").slice(0, 22)}
             </text>
+            {/* Scores */}
+            {isDone && leftScore !== null && rightScore !== null && (
+              <>
+                <text x={x + MATCH_W - 10} y={y + MATCH_H / 2 - 13}
+                  fill={leftIsWinner ? accent : "rgba(255,255,255,0.55)"}
+                  fontSize="11" fontFamily="'Space Mono', monospace" fontWeight="700"
+                  textAnchor="end" dominantBaseline="middle">{leftScore}</text>
+                <text x={x + MATCH_W - 10} y={y + MATCH_H / 2 + 13}
+                  fill={rightIsWinner ? accent : "rgba(255,255,255,0.55)"}
+                  fontSize="11" fontFamily="'Space Mono', monospace" fontWeight="700"
+                  textAnchor="end" dominantBaseline="middle">{rightScore}</text>
+                <rect x={x + MATCH_W - 50} y={y + MATCH_H / 2 - 8} width={24} height={14} rx={7}
+                  fill={`${accent}18`} />
+                <text x={x + MATCH_W - 38} y={y + MATCH_H / 2}
+                  fill={accent} fontSize="7" fontFamily="'Manrope', sans-serif" fontWeight="800"
+                  textAnchor="middle" dominantBaseline="middle" letterSpacing="0.4">FT</text>
+              </>
+            )}
             {isAuto && (
               <>
                 <rect x={x + MATCH_W - 62} y={y + 6} width={56} height={14} rx={7} fill={`${accent}20`} />
@@ -953,9 +1149,13 @@ function StageDetailPanel({
   const isSwiss = stage.format === "SWISS";
   const isLeaguePlusPlayoff = stage.format === "LEAGUE_PLUS_PLAYOFF";
 
-  // Live bracket built from fixtures — replaces the old prop-based approach
+  // Live SE bracket built from fixtures
   const [liveBracket, setLiveBracket] = useState<SingleEliminationBracket | null>(null);
   const [bracketLoading, setBracketLoading] = useState(false);
+
+  // Live DE bracket built from fixtures
+  const [liveDEBracket, setLiveDEBracket] = useState<DoubleEliminationBracket | null>(null);
+  const [deBracketLoading, setDEBracketLoading] = useState(false);
 
   const [playoffCount, setPlayoffCount] = useState("4");
   const [generatingPlayoff, setGeneratingPlayoff] = useState(false);
@@ -975,34 +1175,49 @@ function StageDetailPanel({
   const [activeTab, setActiveTab] = useState(tabs[0] ?? "fixtures");
   useEffect(() => { if (!tabs.includes(activeTab)) setActiveTab(tabs[0] ?? "fixtures"); }, [stage.id]);
 
-  // Load bracket from fixtures whenever stage changes or bracket tab is opened
+  // Load SE bracket from fixtures
   const loadBracketFromFixtures = useCallback(async (fixtures?: StageFixture[]) => {
     if (!isBracket) return;
     setBracketLoading(true);
     try {
       const data = fixtures ?? await fetchStageFixtures(stage.id);
-      const built = buildBracketFromFixtures(data, participants.length);
-      setLiveBracket(built);
+      setLiveBracket(buildBracketFromFixtures(data, participants.length));
     } finally {
       setBracketLoading(false);
     }
   }, [stage.id, isBracket, participants.length]);
 
-  // Fetch bracket on mount / stage switch
+  // Load DE bracket from fixtures
+  const loadDEBracketFromFixtures = useCallback(async (fixtures?: StageFixture[]) => {
+    if (!isDEBracket) return;
+    setDEBracketLoading(true);
+    try {
+      const data = fixtures ?? await fetchStageFixtures(stage.id);
+      setLiveDEBracket(buildDEBracketFromFixtures(data, participants.length));
+    } finally {
+      setDEBracketLoading(false);
+    }
+  }, [stage.id, isDEBracket, participants.length]);
+
+  // Fetch brackets on mount / stage switch
   useEffect(() => {
     if (isBracket) loadBracketFromFixtures();
-  }, [stage.id, isBracket]);
+    if (isDEBracket) loadDEBracketFromFixtures();
+  }, [stage.id, isBracket, isDEBracket]);
 
-  // Called by FixturesView after any score save — keeps bracket in sync
+  // Called by FixturesView after any score save — keeps both brackets in sync
   const handleFixturesChanged = useCallback((fixtures: StageFixture[]) => {
     if (isBracket) loadBracketFromFixtures(fixtures);
-  }, [isBracket, loadBracketFromFixtures]);
+    if (isDEBracket) loadDEBracketFromFixtures(fixtures);
+  }, [isBracket, isDEBracket, loadBracketFromFixtures, loadDEBracketFromFixtures]);
 
-  // Switch to bracket tab and refresh when bracket tab clicked
+  // Switch tabs; refresh brackets when their tab is opened
   const handleTabClick = (tab: string) => {
     setActiveTab(tab);
     if (tab === "bracket" && isBracket) loadBracketFromFixtures();
+    if (tab === "de-bracket" && isDEBracket) loadDEBracketFromFixtures();
   };
+
 
   async function handleGeneratePlayoff() {
     const count = parseInt(playoffCount);
@@ -1078,10 +1293,30 @@ function StageDetailPanel({
         )}
         {activeTab === "de-bracket" && isDEBracket && (
           <motion.div key="de" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <div className="empty-state">
-              <span className="empty-icon">🎯</span>
-              <p>Generate this stage to see the DE bracket.</p>
-            </div>
+            {deBracketLoading ? (
+              <div className="empty-state"><span className="empty-icon">⏳</span><p>Loading bracket...</p></div>
+            ) : liveDEBracket ? (
+              <div className="bracket-section">
+                <div className="bracket-meta">
+                  <span>{liveDEBracket.participantCount} participants</span>
+                  <span>{liveDEBracket.slots} slots</span>
+                  <span>{liveDEBracket.byeCount} byes</span>
+                  <span>{liveDEBracket.winnersRounds.length} WB rounds</span>
+                  <span>{liveDEBracket.losersRounds.length} LB rounds</span>
+                  <span style={{ color: "var(--accent-coral)", borderColor: "rgba(255,107,53,0.3)" }}>
+                    ✓ Live — updates with scores
+                  </span>
+                </div>
+                <div className="bracket-scroll">
+                  <DEBracketCanvas bracket={liveDEBracket} />
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">
+                <span className="empty-icon">🎯</span>
+                <p>No fixtures found. Generate this stage first.</p>
+              </div>
+            )}
           </motion.div>
         )}
         {activeTab === "leaderboard" && isLeaderboard && (
