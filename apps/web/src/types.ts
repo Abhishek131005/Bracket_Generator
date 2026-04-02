@@ -35,7 +35,7 @@ export interface BracketMatch {
   matchIndex: number;
   left: BracketSide;
   right: BracketSide;
-  status: "SCHEDULED" | "AUTO_ADVANCE" | "PENDING";
+  status: "SCHEDULED" | "AUTO_ADVANCE" | "PENDING" | "COMPLETED";
   autoAdvanceWinner: string | null;
 }
 
