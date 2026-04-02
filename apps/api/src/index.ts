@@ -1,5 +1,5 @@
 import cors from "cors";
-import express from "express";
+import express, { type Response } from "express";
 import { z } from "zod";
 import { sportsCatalog } from "./data/sports.js";
 import { buildSingleEliminationBracket } from "./engine/singleElimination.js";
@@ -34,6 +34,68 @@ const port = Number(process.env.PORT ?? 4000);
 
 app.use(cors());
 app.use(express.json());
+
+function formatIssuePath(path: (string | number)[]): string {
+  if (path.length === 0) {
+    return "Request";
+  }
+
+  const value = path
+    .map((part) => (typeof part === "number" ? `item ${part + 1}` : part))
+    .join(" > ");
+
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatValidationIssue(issue: z.ZodIssue): string {
+  const field = formatIssuePath(issue.path);
+
+  if (issue.code === "invalid_type") {
+    if (issue.received === "undefined") {
+      return `${field} is required.`;
+    }
+    return `${field} has an invalid value.`;
+  }
+
+  if (issue.code === "too_small" && issue.type === "string") {
+    if (issue.minimum === 1) {
+      return `${field} cannot be empty.`;
+    }
+    return `${field} must be at least ${issue.minimum} characters long.`;
+  }
+
+  if (issue.code === "too_small" && issue.type === "array") {
+    return `${field} must include at least ${issue.minimum} item${issue.minimum === 1 ? "" : "s"}.`;
+  }
+
+  if (issue.code === "too_small" && issue.type === "number") {
+    return `${field} must be at least ${issue.minimum}.`;
+  }
+
+  if (issue.code === "too_big" && issue.type === "string") {
+    return `${field} must be at most ${issue.maximum} characters long.`;
+  }
+
+  if (issue.code === "too_big" && issue.type === "array") {
+    return `${field} must include no more than ${issue.maximum} items.`;
+  }
+
+  if (issue.code === "too_big" && issue.type === "number") {
+    return `${field} must be ${issue.maximum} or less.`;
+  }
+
+  return `${field}: ${issue.message}`;
+}
+
+function sendValidationError(response: Response, issues: z.ZodIssue[]): void {
+  const details = issues.map(formatValidationIssue);
+
+  response.status(400).json({
+    message: details[0] ?? "Please review the form values and try again.",
+    details,
+    issues,
+  });
+}
 
 app.get("/", (_request, response) => {
   response.status(200).json({
@@ -86,7 +148,7 @@ const createTournamentSchema = z.object({
 app.post("/api/tournaments", async (request, response) => {
   const parsedBody = createTournamentSchema.safeParse(request.body);
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -115,7 +177,7 @@ app.get("/api/tournaments/:id/participants", async (request, response) => {
 app.post("/api/tournaments/:id/participants", async (request, response) => {
   const parsedBody = addParticipantsSchema.safeParse(request.body);
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -148,7 +210,7 @@ const stageNameSchema = z.object({
 app.post("/api/tournaments/:id/stages/single-elimination", async (request, response) => {
   const parsedBody = stageNameSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -165,7 +227,7 @@ app.post("/api/tournaments/:id/stages/single-elimination", async (request, respo
 app.post("/api/tournaments/:id/stages/round-robin", async (request, response) => {
   const parsedBody = stageNameSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -182,7 +244,7 @@ app.post("/api/tournaments/:id/stages/round-robin", async (request, response) =>
 app.post("/api/tournaments/:id/stages/double-elimination", async (request, response) => {
   const parsedBody = stageNameSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -199,7 +261,7 @@ app.post("/api/tournaments/:id/stages/double-elimination", async (request, respo
 app.post("/api/tournaments/:id/stages/swiss", async (request, response) => {
   const parsedBody = stageNameSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -217,7 +279,7 @@ app.post("/api/tournaments/:id/stages/swiss", async (request, response) => {
 app.post("/api/tournaments/:id/stages/league-plus-playoff", async (request, response) => {
   const parsedBody = stageNameSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -240,7 +302,7 @@ const playoffSchema = z.object({
 app.post("/api/tournaments/:id/stages/playoff", async (request, response) => {
   const parsedBody = playoffSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -265,7 +327,7 @@ const swissRePairSchema = z.object({
 app.post("/api/stages/:stageId/swiss/pair-round", async (request, response) => {
   const parsedBody = swissRePairSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -298,7 +360,7 @@ const updateFixtureSchema = z.object({
 app.patch("/api/fixtures/:fixtureId/result", async (request, response) => {
   const parsedBody = updateFixtureSchema.safeParse(request.body);
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -345,7 +407,7 @@ app.get("/api/stages/:stageId/performances", async (request, response) => {
 app.post("/api/stages/:stageId/performances", async (request, response) => {
   const parsedBody = addPerformanceSchema.safeParse(request.body);
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -380,7 +442,7 @@ const createBracketSchema = z.object({
 app.post("/api/brackets/single-elimination", (request, response) => {
   const parsedBody = createBracketSchema.safeParse(request.body);
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -394,7 +456,7 @@ app.post("/api/brackets/single-elimination", (request, response) => {
 app.post("/api/brackets/double-elimination", (request, response) => {
   const parsedBody = createBracketSchema.safeParse(request.body);
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -408,7 +470,7 @@ app.post("/api/brackets/double-elimination", (request, response) => {
 app.post("/api/brackets/round-robin", (request, response) => {
   const parsedBody = createBracketSchema.safeParse(request.body);
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {
@@ -431,7 +493,7 @@ app.post("/api/brackets/swiss", (request, response) => {
   });
   const parsedBody = schema.safeParse(request.body);
   if (!parsedBody.success) {
-    response.status(400).json({ message: "Invalid payload.", issues: parsedBody.error.issues });
+    sendValidationError(response, parsedBody.error.issues);
     return;
   }
   try {

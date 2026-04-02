@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   addParticipantsToTournament,
   createTournament,
@@ -68,6 +68,13 @@ const VIEW_COLORS: Record<string, string> = {
   LEADERBOARD: "#f4d35e",
 };
 
+const VIEW_ICONS: Record<string, string> = {
+  BRACKET: "🏆",
+  HYBRID: "⚽",
+  STANDINGS: "♟️",
+  LEADERBOARD: "🏁",
+};
+
 const RANKING_DIRECTION: Record<string, "ASC" | "DESC"> = {
   TIME_ASC: "ASC",
   DISTANCE_DESC: "DESC",
@@ -91,6 +98,163 @@ const METRIC_UNIT: Record<string, string> = {
   JUDGES_SCORE_DESC: "pts",
   AGGREGATE_POINTS_DESC: "pts",
 };
+
+// ── Sport Picker Modal ────────────────────────────────────────────────────────
+
+function SportPickerModal({
+  sports,
+  selectedId,
+  onSelect,
+  onClose,
+}: {
+  sports: SportDefinition[];
+  selectedId: number | "";
+  onSelect: (id: number) => void;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [activeView, setActiveView] = useState<PrimaryView | "ALL">("ALL");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 80);
+    // Close on Escape
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const views: Array<PrimaryView | "ALL"> = ["ALL", "BRACKET", "HYBRID", "STANDINGS", "LEADERBOARD"];
+
+  const filtered = useMemo(
+    () =>
+      sports.filter((s) => {
+        const matchView = activeView === "ALL" || s.primaryView === activeView;
+        const matchSearch =
+          !search ||
+          s.name.toLowerCase().includes(search.toLowerCase()) ||
+          s.format.toLowerCase().includes(search.toLowerCase());
+        return matchView && matchSearch;
+      }),
+    [sports, activeView, search]
+  );
+
+  return (
+    <motion.div
+      className="sport-picker-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <motion.div
+        className="sport-picker-modal"
+        initial={{ opacity: 0, y: 48, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 24, scale: 0.97 }}
+        transition={{ type: "spring", damping: 28, stiffness: 340 }}
+      >
+        {/* Header */}
+        <div className="spm-header">
+          <div>
+            <h2 className="spm-title">Choose a Sport</h2>
+            <p className="spm-sub">{filtered.length} of {sports.length} sports shown</p>
+          </div>
+          <button className="spm-close" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+
+        {/* Search */}
+        <div className="spm-search-wrap">
+          <span className="spm-search-icon">🔍</span>
+          <input
+            ref={inputRef}
+            className="spm-search"
+            placeholder="Search sports or formats…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <button className="spm-search-clear" onClick={() => setSearch("")} aria-label="Clear search">✕</button>
+          )}
+        </div>
+
+        {/* Category filter pills */}
+        <div className="spm-filters">
+          {views.map((v) => {
+            const count = v === "ALL" ? sports.length : sports.filter((s) => s.primaryView === v).length;
+            const color = v !== "ALL" ? VIEW_COLORS[v] : undefined;
+            return (
+              <button
+                key={v}
+                className={`spm-filter-pill ${activeView === v ? "active" : ""}`}
+                style={activeView === v && color ? ({ "--pill-c": color } as any) : {}}
+                onClick={() => setActiveView(v)}
+              >
+                {v !== "ALL" && <span className="spm-filter-icon">{VIEW_ICONS[v]}</span>}
+                <span>{v === "ALL" ? "All" : v.charAt(0) + v.slice(1).toLowerCase()}</span>
+                <span className="spm-filter-count">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Sport grid */}
+        <div className="spm-grid-wrap">
+          {filtered.length === 0 ? (
+            <div className="spm-empty">
+              <span>🤔</span>
+              <p>No sports match "<strong>{search}</strong>"</p>
+            </div>
+          ) : (
+            <div className="spm-grid">
+              {filtered.map((sport, i) => {
+                const color = VIEW_COLORS[sport.primaryView] ?? "#fff";
+                const isSelected = selectedId === sport.id;
+                return (
+                  <motion.button
+                    key={sport.id}
+                    className={`spm-card ${isSelected ? "selected" : ""}`}
+                    style={{ "--sc": color } as any}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.007, duration: 0.16 }}
+                    onClick={() => { onSelect(sport.id); onClose(); }}
+                    whileHover={{ y: -3, transition: { duration: 0.12 } }}
+                    whileTap={{ scale: 0.96 }}
+                  >
+                    {isSelected && (
+                      <motion.span
+                        className="spm-card-check"
+                        initial={{ scale: 0, rotate: -20 }}
+                        animate={{ scale: 1, rotate: 0 }}
+                        transition={{ type: "spring", stiffness: 420 }}
+                      >
+                        ✓
+                      </motion.span>
+                    )}
+                    <div className="spm-card-glow" />
+                    <span className="spm-card-id">#{sport.id}</span>
+                    <h3 className="spm-card-name">{sport.name}</h3>
+                    <div className="spm-card-footer">
+                      <span
+                        className="spm-card-tag"
+                        style={{ color, background: `${color}18`, border: `1px solid ${color}38` }}
+                      >
+                        {sport.primaryView}
+                      </span>
+                      <span className="spm-card-format">{FORMAT_LABELS[sport.format] ?? sport.format}</span>
+                    </div>
+                  </motion.button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
 
 // ── BracketCanvas (Single Elimination) ───────────────────────────────────────
 
@@ -188,98 +352,264 @@ function BracketCanvas({ bracket }: { bracket: SingleEliminationBracket }) {
   );
 }
 
-// ── Double Elimination Bracket Canvas ─────────────────────────────────────────
+// ── Double Elimination Bracket Canvas — FIXED ─────────────────────────────────
 
 function DEBracketCanvas({ bracket }: { bracket: DoubleEliminationBracket }) {
-  const MATCH_W = 190; const MATCH_H = 72; const ROUND_GAP = 60; const MATCH_GAP = 20;
-  const PAD = 32; const SECTION_GAP = 48;
+  const MATCH_W = 200;
+  const MATCH_H = 76;
+  const ROUND_GAP = 72;
+  const MATCH_GAP = 22;
+  const PAD_X = 32;
+  const PAD_Y = 48; // top padding per section: section-label (16px) + round-labels (16px) + gap
+  const SECTION_GAP = 52;
 
-  const renderRounds = (rounds: DERound[], yOffset: number, accentColor: string, sectionLabel: string) => {
-    if (rounds.length === 0) return null;
-    const maxMatches = Math.max(...rounds.map((r) => r.matches.length));
-    const sectionH = maxMatches * (MATCH_H + MATCH_GAP) + MATCH_GAP;
-    const totalW = PAD * 2 + rounds.length * (MATCH_W + ROUND_GAP);
-
-    const getY = (ri: number, mi: number) => {
-      const rm = rounds[ri]?.matches.length ?? 1;
-      const slotH = MATCH_H + MATCH_GAP;
-      const totalH = maxMatches * slotH;
-      const offset = (totalH - rm * slotH) / 2;
-      return yOffset + PAD + offset + mi * slotH;
-    };
-    const getX = (ri: number) => PAD + ri * (MATCH_W + ROUND_GAP);
-
-    return (
-      <g key={sectionLabel}>
-        <text x={PAD} y={yOffset + 14} fill={accentColor} fontSize="10"
-          fontFamily="Bebas Neue, sans-serif" letterSpacing="3" opacity="0.8">
-          {sectionLabel}
-        </text>
-        {rounds.map((round, rIdx) => (
-          <text key={`lbl-${sectionLabel}-${rIdx}`}
-            x={getX(rIdx) + MATCH_W / 2} y={yOffset + 26}
-            fill="rgba(255,255,255,0.35)" fontSize="9" fontFamily="Bebas Neue, sans-serif"
-            letterSpacing="2" textAnchor="middle">
-            {round.title.toUpperCase()}
-          </text>
-        ))}
-        {rounds.map((round, rIdx) =>
-          round.matches.map((match, mIdx) => {
-            const x = getX(rIdx); const y = getY(rIdx, mIdx);
-            const isGF = round.bracket === "GRAND_FINAL";
-            const isAuto = match.status === "AUTO_ADVANCE";
-            return (
-              <motion.g key={match.id}
-                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: rIdx * 0.1 + mIdx * 0.05, duration: 0.3, type: "spring" }}>
-                <rect x={x} y={y} width={MATCH_W} height={MATCH_H} rx={8}
-                  fill={isGF ? "rgba(244,211,94,0.08)" : "rgba(255,255,255,0.05)"}
-                  stroke={isGF ? "rgba(244,211,94,0.5)" : isAuto ? "rgba(199,244,100,0.3)" : `${accentColor}30`}
-                  strokeWidth={isGF ? 1.5 : 1} />
-                <line x1={x + 8} y1={y + MATCH_H / 2} x2={x + MATCH_W - 8} y2={y + MATCH_H / 2}
-                  stroke="rgba(255,255,255,0.07)" strokeWidth="1" />
-                <text x={x + 8} y={y + MATCH_H / 2 - 10}
-                  fill={match.leftLabel ? "#f4f1de" : "rgba(255,255,255,0.3)"}
-                  fontSize="10" fontFamily="Manrope, sans-serif" fontWeight="600" dominantBaseline="middle">
-                  {match.leftSeed ? <tspan fill={accentColor} fontSize="8" fontWeight="700">S{match.leftSeed} </tspan> : null}
-                  {(match.leftLabel ?? "TBD").slice(0, 20)}
-                </text>
-                <text x={x + 8} y={y + MATCH_H / 2 + 10}
-                  fill={match.rightLabel ? "#f4f1de" : "rgba(255,255,255,0.3)"}
-                  fontSize="10" fontFamily="Manrope, sans-serif" fontWeight="600" dominantBaseline="middle">
-                  {match.rightSeed ? <tspan fill={accentColor} fontSize="8" fontWeight="700">S{match.rightSeed} </tspan> : null}
-                  {(match.rightLabel ?? "TBD").slice(0, 20)}
-                </text>
-              </motion.g>
-            );
-          })
-        )}
-      </g>
-    );
+  type SectionSpec = {
+    rounds: DERound[];
+    label: string;
+    accent: string;
+    yStart: number;
+    maxMatches: number;
+    sectionH: number;
   };
 
-  const wbMaxMatches = Math.max(...bracket.winnersRounds.map((r) => r.matches.length));
-  const lbMaxMatches = bracket.losersRounds.length > 0
-    ? Math.max(...bracket.losersRounds.map((r) => r.matches.length))
-    : 0;
-  const wbH = wbMaxMatches * (MATCH_H + MATCH_GAP) + PAD * 2 + 16;
-  const lbH = lbMaxMatches * (MATCH_H + MATCH_GAP) + PAD * 2 + 16;
-  const gfH = (MATCH_H + MATCH_GAP) * 2 + PAD * 2 + 16;
+  const buildSection = (
+    rounds: DERound[],
+    label: string,
+    accent: string,
+    yStart: number
+  ): SectionSpec => {
+    const maxMatches = rounds.length > 0 ? Math.max(...rounds.map((r) => r.matches.length)) : 1;
+    const slotH = MATCH_H + MATCH_GAP;
+    const sectionH = PAD_Y + maxMatches * slotH + MATCH_GAP;
+    return { rounds, label, accent, yStart, maxMatches, sectionH };
+  };
 
-  const maxRounds = Math.max(
-    bracket.winnersRounds.length,
-    bracket.losersRounds.length,
-    bracket.grandFinal.matches.length > 0 ? 1 : 0
+  const wbSpec = buildSection(bracket.winnersRounds, "WINNERS BRACKET", "#c7f464", 0);
+  const lbSpec = buildSection(
+    bracket.losersRounds,
+    "LOSERS BRACKET",
+    "#ff6b35",
+    wbSpec.sectionH + SECTION_GAP
   );
-  const totalW = PAD * 2 + maxRounds * (MATCH_W + ROUND_GAP) + 80;
-  const totalH = wbH + SECTION_GAP + lbH + SECTION_GAP + gfH;
+  const gfSpec = buildSection(
+    [bracket.grandFinal],
+    "GRAND FINAL",
+    "#f4d35e",
+    wbSpec.sectionH + SECTION_GAP + lbSpec.sectionH + SECTION_GAP
+  );
+
+  const sections: SectionSpec[] = [wbSpec, lbSpec, gfSpec];
+
+  const getMatchX = (rIdx: number) => PAD_X + rIdx * (MATCH_W + ROUND_GAP);
+
+  const getMatchY = (spec: SectionSpec, rIdx: number, mIdx: number) => {
+    const rm = spec.rounds[rIdx]?.matches.length ?? 1;
+    const slotH = MATCH_H + MATCH_GAP;
+    const totalH = spec.maxMatches * slotH;
+    const offset = (totalH - rm * slotH) / 2;
+    return spec.yStart + PAD_Y + offset + mIdx * slotH;
+  };
+
+  const maxRoundCount = Math.max(
+    wbSpec.rounds.length,
+    lbSpec.rounds.length,
+    1
+  );
+  const totalW = PAD_X * 2 + maxRoundCount * (MATCH_W + ROUND_GAP) - ROUND_GAP + MATCH_W;
+  const totalH = gfSpec.yStart + gfSpec.sectionH + 16;
+
+  // ── Connectors ──
+  const renderConnectors = (spec: SectionSpec) =>
+    spec.rounds.flatMap((round, rIdx) => {
+      if (rIdx >= spec.rounds.length - 1) return [];
+      return round.matches.map((_, mIdx) => {
+        const x1 = getMatchX(rIdx) + MATCH_W;
+        const y1 = getMatchY(spec, rIdx, mIdx) + MATCH_H / 2;
+        const targetIdx = Math.floor(mIdx / 2);
+        const x2 = getMatchX(rIdx + 1);
+        const y2 = getMatchY(spec, rIdx + 1, targetIdx) + MATCH_H / 2;
+        const midX = (x1 + x2) / 2;
+        return (
+          <motion.path
+            key={`conn-${spec.label}-r${rIdx}-m${mIdx}`}
+            d={`M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}`}
+            fill="none"
+            stroke={`${spec.accent}60`}
+            strokeWidth="1.8"
+            strokeDasharray="5 3"
+            initial={{ pathLength: 0, opacity: 0 }}
+            animate={{ pathLength: 1, opacity: 1 }}
+            transition={{ delay: 0.1 + rIdx * 0.09 + mIdx * 0.04, duration: 0.5 }}
+          />
+        );
+      });
+    });
+
+  // ── Section header (label + round titles) ──
+  const renderSectionHeader = (spec: SectionSpec) => (
+    <g key={`hdr-${spec.label}`}>
+      {/* Subtle separator line */}
+      {spec.yStart > 0 && (
+        <line
+          x1={0} y1={spec.yStart + 2}
+          x2={totalW} y2={spec.yStart + 2}
+          stroke={`${spec.accent}1a`} strokeWidth="1"
+        />
+      )}
+      {/* Section pill label */}
+      <rect
+        x={PAD_X} y={spec.yStart + 7}
+        width={spec.label.length * 7.2 + 22} height={17}
+        rx={8.5}
+        fill={`${spec.accent}14`} stroke={`${spec.accent}30`} strokeWidth="1"
+      />
+      <text
+        x={PAD_X + 11} y={spec.yStart + 15.5}
+        fill={spec.accent}
+        fontSize="9" fontFamily="'Bebas Neue', sans-serif"
+        letterSpacing="2.5" dominantBaseline="middle"
+      >
+        {spec.label}
+      </text>
+      {/* Per-round column titles */}
+      {spec.rounds.map((round, rIdx) => (
+        <text
+          key={`rtitle-${spec.label}-${rIdx}`}
+          x={getMatchX(rIdx) + MATCH_W / 2}
+          y={spec.yStart + PAD_Y - 10}
+          fill="rgba(255,255,255,0.40)"
+          fontSize="9.5"
+          fontFamily="'Manrope', sans-serif"
+          fontWeight="700"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          letterSpacing="0.3"
+        >
+          {round.title.toUpperCase()}
+        </text>
+      ))}
+    </g>
+  );
+
+  // ── Match cards ──
+  const renderCards = (spec: SectionSpec) =>
+    spec.rounds.flatMap((round, rIdx) =>
+      round.matches.map((match, mIdx) => {
+        const x = getMatchX(rIdx);
+        const y = getMatchY(spec, rIdx, mIdx);
+        const isGF = round.bracket === "GRAND_FINAL";
+        const isAuto = match.status === "AUTO_ADVANCE";
+        const accent = spec.accent;
+        const hasLeft = !!match.leftLabel && match.leftLabel !== "TBD";
+        const hasRight = !!match.rightLabel && match.rightLabel !== "TBD";
+        const leftName = (match.leftLabel ?? "TBD").slice(0, 22);
+        const rightName = (match.rightLabel ?? "TBD").slice(0, 22);
+
+        return (
+          <motion.g
+            key={`card-${spec.label}-${match.id}-${rIdx}-${mIdx}`}
+            initial={{ opacity: 0, scale: 0.88 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.05 + rIdx * 0.07 + mIdx * 0.04, duration: 0.25, type: "spring" }}
+          >
+            {/* Card background */}
+            <rect
+              x={x} y={y} width={MATCH_W} height={MATCH_H} rx={9}
+              fill={isGF ? "rgba(244,211,94,0.08)" : "rgba(255,255,255,0.05)"}
+              stroke={
+                isGF
+                  ? "rgba(244,211,94,0.55)"
+                  : isAuto
+                  ? `${accent}50`
+                  : `${accent}2a`
+              }
+              strokeWidth={isGF ? 1.5 : 1}
+            />
+            {/* Left accent bar */}
+            <rect x={x} y={y + 3} width={3} height={MATCH_H - 6} rx={1.5} fill={`${accent}70`} />
+            {/* Divider */}
+            <line
+              x1={x + 10} y1={y + MATCH_H / 2}
+              x2={x + MATCH_W - 10} y2={y + MATCH_H / 2}
+              stroke="rgba(255,255,255,0.07)" strokeWidth="1"
+            />
+
+            {/* Seed badges */}
+            {match.leftSeed != null && (
+              <text
+                x={x + 13} y={y + MATCH_H / 2 - 13}
+                fill={accent} fontSize="8.5"
+                fontFamily="'Space Mono', monospace" fontWeight="700"
+                dominantBaseline="middle"
+              >S{match.leftSeed}</text>
+            )}
+            {match.rightSeed != null && (
+              <text
+                x={x + 13} y={y + MATCH_H / 2 + 13}
+                fill={accent} fontSize="8.5"
+                fontFamily="'Space Mono', monospace" fontWeight="700"
+                dominantBaseline="middle"
+              >S{match.rightSeed}</text>
+            )}
+
+            {/* Participant names */}
+            <text
+              x={x + (match.leftSeed != null ? 34 : 13)}
+              y={y + MATCH_H / 2 - 13}
+              fill={hasLeft ? "#f0ede5" : "rgba(255,255,255,0.27)"}
+              fontSize="11.5"
+              fontFamily="'Manrope', sans-serif"
+              fontWeight={hasLeft ? "600" : "400"}
+              dominantBaseline="middle"
+            >
+              {leftName}
+            </text>
+            <text
+              x={x + (match.rightSeed != null ? 34 : 13)}
+              y={y + MATCH_H / 2 + 13}
+              fill={hasRight ? "#f0ede5" : "rgba(255,255,255,0.27)"}
+              fontSize="11.5"
+              fontFamily="'Manrope', sans-serif"
+              fontWeight={hasRight ? "600" : "400"}
+              dominantBaseline="middle"
+            >
+              {rightName}
+            </text>
+
+            {/* Auto-bye badge */}
+            {isAuto && (
+              <>
+                <rect x={x + MATCH_W - 62} y={y + 6} width={56} height={14} rx={7} fill={`${accent}20`} />
+                <text
+                  x={x + MATCH_W - 34} y={y + 13}
+                  fill={accent} fontSize="7.5"
+                  fontFamily="'Manrope', sans-serif" fontWeight="800"
+                  textAnchor="middle" dominantBaseline="middle" letterSpacing="0.6"
+                >AUTO BYE</text>
+              </>
+            )}
+          </motion.g>
+        );
+      })
+    );
 
   return (
     <div className="bracket-canvas-wrap">
-      <svg viewBox={`0 0 ${totalW} ${totalH}`} width="100%" style={{ minWidth: totalW, overflow: "visible" }}>
-        {renderRounds(bracket.winnersRounds, 0, "#c7f464", "WINNERS BRACKET")}
-        {renderRounds(bracket.losersRounds, wbH + SECTION_GAP, "#ff6b35", "LOSERS BRACKET")}
-        {renderRounds([bracket.grandFinal], wbH + SECTION_GAP + lbH + SECTION_GAP, "#f4d35e", "GRAND FINAL")}
+      <svg
+        viewBox={`0 0 ${totalW} ${totalH}`}
+        width="100%"
+        style={{ minWidth: Math.max(totalW, 600), overflow: "visible", display: "block" }}
+      >
+        {/* Connectors drawn first (behind cards) */}
+        {sections.map((spec) => (
+          <g key={`conns-${spec.label}`}>{renderConnectors(spec)}</g>
+        ))}
+        {/* Section headers */}
+        {sections.map((spec) => renderSectionHeader(spec))}
+        {/* Match cards */}
+        {sections.map((spec) => (
+          <g key={`cards-${spec.label}`}>{renderCards(spec)}</g>
+        ))}
       </svg>
     </div>
   );
@@ -310,11 +640,6 @@ function FixturesView({ stageId, isSwiss, onSwissRePair }: {
     const map = new Map<number, StageFixture[]>();
     for (const f of fixtures) { if (!map.has(f.roundIndex)) map.set(f.roundIndex, []); map.get(f.roundIndex)!.push(f); }
     return Array.from(map.entries()).sort((a, b) => a[0] - b[0]);
-  }, [fixtures]);
-
-  const maxCompletedRound = useMemo(() => {
-    const completed = fixtures.filter((f) => f.status === "COMPLETED");
-    return completed.length > 0 ? Math.max(...completed.map((f) => f.roundIndex)) : 0;
   }, [fixtures]);
 
   async function handleSave(fixtureId: string) {
@@ -355,12 +680,8 @@ function FixturesView({ stageId, isSwiss, onSwissRePair }: {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.6rem" }}>
               <h4 className="fixtures-round-title">Round {roundIdx}</h4>
               {isSwiss && isTBD && allPrevRoundsDone && (
-                <button
-                  className="btn-cyan"
-                  style={{ fontSize: "0.72rem", padding: "0.3rem 0.7rem" }}
-                  onClick={() => handleSwissRePair(roundIdx)}
-                  disabled={rePairing === roundIdx}
-                >
+                <button className="btn-cyan" style={{ fontSize: "0.72rem", padding: "0.3rem 0.7rem" }}
+                  onClick={() => handleSwissRePair(roundIdx)} disabled={rePairing === roundIdx}>
                   {rePairing === roundIdx ? "Pairing..." : "⚡ Generate Pairings"}
                 </button>
               )}
@@ -533,10 +854,7 @@ function LeaderboardView({ stageId, participants, rankingRule }: {
       ) : (
         <div className="leaderboard-list">
           <div className="lb-header-row">
-            <span className="lb-col-rank">#</span>
-            <span className="lb-col-name">Participant</span>
-            <span className="lb-col-metric">{metricLabel}</span>
-            <span className="lb-col-actions"></span>
+            <span>#</span><span>Participant</span><span>{metricLabel}</span><span></span>
           </div>
           {ranked.map((entry, i) => (
             <motion.div key={entry.id} className={`lb-row ${i === 0 ? "lb-row-best" : ""}`}
@@ -556,13 +874,8 @@ function LeaderboardView({ stageId, participants, rankingRule }: {
 // ── Stage Detail Panel ────────────────────────────────────────────────────────
 
 function StageDetailPanel({
-  stage,
-  participants,
-  generatedBracket,
-  generatedDEBracket,
-  onPlayoffGenerate,
-  tournamentId,
-  allStages,
+  stage, participants, generatedBracket, generatedDEBracket,
+  onPlayoffGenerate, tournamentId, allStages,
 }: {
   stage: TournamentStage;
   participants: TournamentParticipant[];
@@ -574,7 +887,7 @@ function StageDetailPanel({
 }) {
   const isLeaderboard = ["DIRECT_FINAL", "HEATS_PLUS_FINAL", "MULTI_EVENT_POINTS", "JUDGED_LEADERBOARD"].includes(stage.format);
   const isPointsTable = ["ROUND_ROBIN", "SWISS", "LEAGUE_PLUS_PLAYOFF"].includes(stage.format);
-  const isBracket = ["SINGLE_ELIMINATION"].includes(stage.format);
+  const isBracket = stage.format === "SINGLE_ELIMINATION";
   const isDEBracket = stage.format === "DOUBLE_ELIMINATION";
   const isSwiss = stage.format === "SWISS";
   const isLeaguePlusPlayoff = stage.format === "LEAGUE_PLUS_PLAYOFF";
@@ -595,10 +908,7 @@ function StageDetailPanel({
   }, [stage.format]);
 
   const [activeTab, setActiveTab] = useState(tabs[0] ?? "fixtures");
-
-  useEffect(() => {
-    if (!tabs.includes(activeTab)) setActiveTab(tabs[0] ?? "fixtures");
-  }, [tabs]);
+  useEffect(() => { if (!tabs.includes(activeTab)) setActiveTab(tabs[0] ?? "fixtures"); }, [tabs]);
 
   async function handleGeneratePlayoff() {
     const count = parseInt(playoffCount);
@@ -621,29 +931,24 @@ function StageDetailPanel({
       <div className="tab-row">
         {tabs.map((tab) => (
           <button key={tab} className={`tab-btn ${activeTab === tab ? "active" : ""}`} onClick={() => setActiveTab(tab)}>
-            {tab === "fixtures" ? "Fixtures"
-              : tab === "standings" ? "Standings"
-              : tab === "bracket" ? "Bracket"
-              : tab === "de-bracket" ? "DE Bracket"
-              : tab === "leaderboard" ? "Leaderboard"
-              : tab === "playoff" ? "Playoff"
-              : tab}
+            {tab === "fixtures" ? "Fixtures" : tab === "standings" ? "Standings" : tab === "bracket" ? "Bracket"
+              : tab === "de-bracket" ? "DE Bracket" : tab === "leaderboard" ? "Leaderboard" : "Playoff"}
           </button>
         ))}
       </div>
       <AnimatePresence mode="wait">
         {activeTab === "fixtures" && !isLeaderboard && (
-          <motion.div key="fixtures" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div key="fx" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <FixturesView stageId={stage.id} isSwiss={isSwiss} />
           </motion.div>
         )}
         {activeTab === "standings" && isPointsTable && (
-          <motion.div key="standings" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div key="st" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <StandingsView stageId={stage.id} />
           </motion.div>
         )}
         {activeTab === "bracket" && isBracket && (
-          <motion.div key="bracket" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div key="br" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             {generatedBracket ? (
               <div className="bracket-section">
                 <div className="bracket-meta">
@@ -653,13 +958,11 @@ function StageDetailPanel({
                 </div>
                 <div className="bracket-scroll"><BracketCanvas bracket={generatedBracket} /></div>
               </div>
-            ) : (
-              <div className="empty-state"><span className="empty-icon">🎯</span><p>Generate this stage to see the bracket.</p></div>
-            )}
+            ) : <div className="empty-state"><span className="empty-icon">🎯</span><p>Generate this stage to see the bracket.</p></div>}
           </motion.div>
         )}
         {activeTab === "de-bracket" && isDEBracket && (
-          <motion.div key="de-bracket" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div key="de" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             {generatedDEBracket ? (
               <div className="bracket-section">
                 <div className="bracket-meta">
@@ -671,41 +974,29 @@ function StageDetailPanel({
                 </div>
                 <div className="bracket-scroll"><DEBracketCanvas bracket={generatedDEBracket} /></div>
               </div>
-            ) : (
-              <div className="empty-state"><span className="empty-icon">🎯</span><p>Generate this stage to see the DE bracket.</p></div>
-            )}
+            ) : <div className="empty-state"><span className="empty-icon">🎯</span><p>Generate this stage to see the DE bracket.</p></div>}
           </motion.div>
         )}
         {activeTab === "leaderboard" && isLeaderboard && (
-          <motion.div key="leaderboard" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div key="lb" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <LeaderboardView stageId={stage.id} participants={participants} rankingRule={stage.rankingRule} />
           </motion.div>
         )}
         {activeTab === "playoff" && isLeaguePlusPlayoff && (
-          <motion.div key="playoff" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div key="po" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div style={{ padding: "1.5rem" }}>
-              <h4 style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: "1.1rem", letterSpacing: "0.06em", color: "var(--accent-gold)", marginBottom: "1rem" }}>
-                Generate Playoff Bracket
-              </h4>
-              <p style={{ fontSize: "0.84rem", color: "var(--text-dim)", marginBottom: "1.25rem" }}>
-                After completing the league stage, generate a single-elimination playoff from the top N teams by standings.
-              </p>
+              <h4 style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: "1.1rem", letterSpacing: "0.06em", color: "var(--accent-gold)", marginBottom: "1rem" }}>Generate Playoff Bracket</h4>
+              <p style={{ fontSize: "0.84rem", color: "var(--text-dim)", marginBottom: "1.25rem" }}>Generate a single-elimination playoff from the top N teams by standings.</p>
               <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
                 <div>
                   <label className="field-label">Top teams to qualify</label>
-                  <input className="field-input" type="number" min="2" max="32" value={playoffCount}
-                    onChange={(e) => setPlayoffCount(e.target.value)}
-                    style={{ maxWidth: "80px" }} />
+                  <input className="field-input" type="number" min="2" max="32" value={playoffCount} onChange={(e) => setPlayoffCount(e.target.value)} style={{ maxWidth: "80px" }} />
                 </div>
-                <button className="btn-gold" onClick={handleGeneratePlayoff} disabled={generatingPlayoff}
-                  style={{ marginTop: "1.4rem" }}>
+                <button className="btn-gold" onClick={handleGeneratePlayoff} disabled={generatingPlayoff} style={{ marginTop: "1.4rem" }}>
                   {generatingPlayoff ? "Generating..." : "⚡ Generate Playoff"}
                 </button>
               </div>
               {playoffError && <p className="form-error" style={{ marginTop: "0.75rem" }}>{playoffError}</p>}
-              <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "0.75rem" }}>
-                The playoff bracket will appear as a new stage in the stages panel.
-              </p>
             </div>
           </motion.div>
         )}
@@ -849,15 +1140,12 @@ function HomePage({ sports, tournaments, setPage }: { sports: SportDefinition[];
 function CreatePage({ sports, onCreated }: { sports: SportDefinition[]; onCreated: (t: Tournament) => void }) {
   const [tournamentName, setTournamentName] = useState("");
   const [selectedSportId, setSelectedSportId] = useState<number | "">("");
+  const [showPicker, setShowPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState<Tournament | null>(null);
   const selectedSport = sports.find((s) => s.id === Number(selectedSportId)) ?? null;
-  const viewGroups = useMemo(() => {
-    const g: Record<string, SportDefinition[]> = {};
-    for (const s of sports) { if (!g[s.primaryView]) g[s.primaryView] = []; g[s.primaryView].push(s); }
-    return g;
-  }, [sports]);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault(); setError("");
     if (!tournamentName.trim() || !selectedSportId) { setError("Tournament name and sport are required."); return; }
@@ -868,6 +1156,7 @@ function CreatePage({ sports, onCreated }: { sports: SportDefinition[]; onCreate
     } catch (err) { setError(err instanceof Error ? err.message : "Could not create tournament."); }
     finally { setIsSaving(false); }
   }
+
   return (
     <motion.div className="page-create" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
       <div className="create-hero"><h1 className="page-title">Launch a Tournament</h1><p className="page-sub">Choose your sport, name your event, and Zemo handles the rest.</p></div>
@@ -878,17 +1167,31 @@ function CreatePage({ sports, onCreated }: { sports: SportDefinition[]; onCreate
               <label className="field-label">Tournament Name</label>
               <input className="field-input" value={tournamentName} onChange={(e) => setTournamentName(e.target.value)} placeholder="e.g. Inter-College Basketball Cup 2025" />
             </div>
+
+            {/* Sport Picker Trigger Button */}
             <div className="form-field">
               <label className="field-label">Select Sport</label>
-              <select className="field-select" value={selectedSportId} onChange={(e) => setSelectedSportId(e.target.value ? Number(e.target.value) : "")}>
-                <option value="">Choose a sport...</option>
-                {Object.entries(viewGroups).map(([view, sportList]) => (
-                  <optgroup key={view} label={`── ${view} SPORTS ──`}>
-                    {sportList.map((s) => <option key={s.id} value={s.id}>{s.name} — {FORMAT_LABELS[s.format] ?? s.format}</option>)}
-                  </optgroup>
-                ))}
-              </select>
+              <button
+                type="button"
+                className={`sport-picker-trigger ${selectedSport ? "has-value" : ""}`}
+                onClick={() => setShowPicker(true)}
+              >
+                {selectedSport ? (
+                  <span className="spt-selected">
+                    <span className="spt-dot" style={{ background: VIEW_COLORS[selectedSport.primaryView] ?? "#fff" }} />
+                    <span className="spt-name">{selectedSport.name}</span>
+                    <span className="spt-format">{FORMAT_LABELS[selectedSport.format] ?? selectedSport.format}</span>
+                  </span>
+                ) : (
+                  <span className="spt-placeholder">
+                    <span className="spt-icon">🏅</span>
+                    Browse {sports.length} sports…
+                  </span>
+                )}
+                <span className="spt-arrow">⌄</span>
+              </button>
             </div>
+
             {selectedSport && (
               <motion.div className="sport-preview-box" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}>
                 <div className="spb-row"><span className="spb-label">Format</span><span className="spb-val">{FORMAT_LABELS[selectedSport.format] ?? selectedSport.format}</span></div>
@@ -897,6 +1200,7 @@ function CreatePage({ sports, onCreated }: { sports: SportDefinition[]; onCreate
                 {selectedSport.notes && <p className="spb-note">{selectedSport.notes}</p>}
               </motion.div>
             )}
+
             {error && <p className="form-error">{error}</p>}
             {success && <motion.div className="form-success" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>✓ <strong>{success.name}</strong> created! Head to Tournament Hub.</motion.div>}
             <button type="submit" className="btn-primary btn-full" disabled={isSaving}>{isSaving ? "Creating..." : "Create Tournament →"}</button>
@@ -919,6 +1223,18 @@ function CreatePage({ sports, onCreated }: { sports: SportDefinition[]; onCreate
           </div>
         </div>
       </div>
+
+      {/* Modal */}
+      <AnimatePresence>
+        {showPicker && (
+          <SportPickerModal
+            sports={sports}
+            selectedId={selectedSportId}
+            onSelect={(id) => setSelectedSportId(id)}
+            onClose={() => setShowPicker(false)}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -1008,8 +1324,7 @@ function TournamentPage({ tournaments, sports }: { tournaments: Tournament[]; sp
   }
 
   function mergeStages(prev: TournamentStage[], newStage: TournamentStage): TournamentStage[] {
-    return Array.from(new Map([newStage, ...prev].map((s) => [s.id, s])).values())
-      .sort((a, b) => a.sequence - b.sequence);
+    return Array.from(new Map([newStage, ...prev].map((s) => [s.id, s])).values()).sort((a, b) => a.sequence - b.sequence);
   }
 
   function handlePlayoffGenerate(newStage: TournamentStage, bracket: SingleEliminationBracket) {
@@ -1058,7 +1373,6 @@ function TournamentPage({ tournaments, sports }: { tournaments: Tournament[]; sp
                 Stages {stages.length > 0 && <span className="tab-count">{stages.length}</span>}
               </button>
             </div>
-
             <AnimatePresence mode="wait">
               {mainTab === "participants" && (
                 <motion.div key="p-tab" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -1086,17 +1400,11 @@ function TournamentPage({ tournaments, sports }: { tournaments: Tournament[]; sp
                     <input className="field-input" value={stageName} onChange={(e) => setStageName(e.target.value)} placeholder="Stage name (optional)" />
                     <div className="format-select-row" style={{ flexWrap: "wrap", gap: "0.35rem" }}>
                       {GENERATE_FORMATS.map((f) => (
-                        <button key={f.id} type="button"
-                          className={`format-pill ${generateFormat === f.id ? "active" : ""}`}
-                          onClick={() => setGenerateFormat(f.id)}>
-                          {f.label}
-                        </button>
+                        <button key={f.id} type="button" className={`format-pill ${generateFormat === f.id ? "active" : ""}`} onClick={() => setGenerateFormat(f.id)}>{f.label}</button>
                       ))}
                     </div>
                     {generateFormat === "swiss" && (
-                      <input className="field-input" type="number" min="1" max="20"
-                        value={swissRounds} onChange={(e) => setSwissRounds(e.target.value)}
-                        placeholder="Rounds (default: auto)" />
+                      <input className="field-input" type="number" min="1" max="20" value={swissRounds} onChange={(e) => setSwissRounds(e.target.value)} placeholder="Rounds (default: auto)" />
                     )}
                     <button type="submit" className="btn-gold btn-full" disabled={isGenerating || !selectedId}>{isGenerating ? "Generating..." : "⚡ Generate Stage"}</button>
                     <p className="action-hint">Requires at least 2 participants.</p>
@@ -1122,13 +1430,11 @@ function TournamentPage({ tournaments, sports }: { tournaments: Tournament[]; sp
           <div className="tournament-main-panel">
             {activeStage ? (
               <StageDetailPanel
-                stage={activeStage}
-                participants={participants}
+                stage={activeStage} participants={participants}
                 generatedBracket={activeStage.format === "SINGLE_ELIMINATION" ? generatedBracket : null}
                 generatedDEBracket={activeStage.format === "DOUBLE_ELIMINATION" ? generatedDEBracket : null}
                 onPlayoffGenerate={handlePlayoffGenerate}
-                tournamentId={selectedId}
-                allStages={stages}
+                tournamentId={selectedId} allStages={stages}
               />
             ) : (
               <div className="empty-state large">
@@ -1196,13 +1502,8 @@ function PlaygroundPage() {
     if (names.length < 2) { setError("Enter at least 2 participants."); return; }
     try {
       setIsGenerating(true);
-      if (mode === "single") {
-        const b = await generateSingleEliminationBracket(names);
-        setBracket(b);
-      } else {
-        const b = await generateDoubleEliminationBracket(names);
-        setDEBracket(b);
-      }
+      if (mode === "single") { setBracket(await generateSingleEliminationBracket(names)); }
+      else { setDEBracket(await generateDoubleEliminationBracket(names)); }
     } catch { setError("Could not generate bracket. Check API is running."); }
     finally { setIsGenerating(false); }
   }
@@ -1231,15 +1532,11 @@ function PlaygroundPage() {
               <div className="bsb-row"><span>Participants</span><strong>{activeBracket.participantCount}</strong></div>
               <div className="bsb-row"><span>Total Slots</span><strong>{activeBracket.slots}</strong></div>
               <div className="bsb-row"><span>Byes</span><strong>{activeBracket.byeCount}</strong></div>
-              {mode === "single" && bracket && (
-                <div className="bsb-row"><span>Rounds</span><strong>{bracket.rounds.length}</strong></div>
-              )}
-              {mode === "double" && deBracket && (
-                <>
-                  <div className="bsb-row"><span>WB Rounds</span><strong>{deBracket.winnersRounds.length}</strong></div>
-                  <div className="bsb-row"><span>LB Rounds</span><strong>{deBracket.losersRounds.length}</strong></div>
-                </>
-              )}
+              {mode === "single" && bracket && <div className="bsb-row"><span>Rounds</span><strong>{bracket.rounds.length}</strong></div>}
+              {mode === "double" && deBracket && <>
+                <div className="bsb-row"><span>WB Rounds</span><strong>{deBracket.winnersRounds.length}</strong></div>
+                <div className="bsb-row"><span>LB Rounds</span><strong>{deBracket.losersRounds.length}</strong></div>
+              </>}
             </div>
           )}
         </div>

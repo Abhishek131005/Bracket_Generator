@@ -23,11 +23,10 @@ async function parseResponse<T>(response: Response): Promise<T> {
     let errorMessage = "Request failed.";
     try {
       const errorBody = await response.json();
-      if (errorBody.message) {
+      if (Array.isArray(errorBody.details) && errorBody.details.length > 0) {
+        errorMessage = errorBody.details.join(" ");
+      } else if (errorBody.message) {
         errorMessage = errorBody.message;
-        if (errorBody.issues) {
-          errorMessage += " Issues: " + JSON.stringify(errorBody.issues);
-        }
       }
     } catch {
       const errorText = await response.text();
