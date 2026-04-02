@@ -1,23 +1,80 @@
+// apps/web/src/types.ts
+
 export type PrimaryView = "BRACKET" | "STANDINGS" | "LEADERBOARD" | "HYBRID";
+
+// ── Enums (mirrored from Prisma schema) ──────────────────────────────────────
+
+export type TournamentStatus =
+  | "DRAFT"
+  | "PUBLISHED"
+  | "IN_PROGRESS"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export type StageStatus =
+  | "DRAFT"
+  | "PUBLISHED"
+  | "IN_PROGRESS"
+  | "COMPLETED";
+
+export type FixtureStatus =
+  | "SCHEDULED"
+  | "PENDING"
+  | "IN_PROGRESS"
+  | "AUTO_ADVANCE"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export type ParticipantType = "INDIVIDUAL" | "TEAM";
+
+export type BracketType = "WINNERS" | "LOSERS" | "GRAND_FINAL";
+
+export type CompetitionFormat =
+  | "SINGLE_ELIMINATION"
+  | "DOUBLE_ELIMINATION"
+  | "ROUND_ROBIN"
+  | "SWISS"
+  | "LEAGUE_PLUS_PLAYOFF"
+  | "HEATS_PLUS_FINAL"
+  | "DIRECT_FINAL"
+  | "MULTI_EVENT_POINTS"
+  | "JUDGED_LEADERBOARD"
+  | "CUSTOM";
+
+export type RankingRule =
+  | "HEAD_TO_HEAD_SCORE"
+  | "POINTS_TABLE"
+  | "TIME_ASC"
+  | "DISTANCE_DESC"
+  | "HEIGHT_DESC_WITH_COUNTBACK"
+  | "JUDGES_SCORE_DESC"
+  | "AGGREGATE_POINTS_DESC";
+
+// ── Sport Catalog ─────────────────────────────────────────────────────────────
 
 export interface SportDefinition {
   id: number;
   name: string;
-  format: string;
-  rankingRule: string;
+  format: CompetitionFormat;
+  rankingRule: RankingRule;
   needsBracket: boolean;
   primaryView: PrimaryView;
   notes?: string;
 }
+
+// ── Core Domain Models ────────────────────────────────────────────────────────
 
 export interface Tournament {
   id: string;
   name: string;
   sportId: number;
   sportName: string;
-  format: string;
-  rankingRule: string;
-  status: string;
+  format: CompetitionFormat;
+  rankingRule: RankingRule;
+  status: TournamentStatus;
+  description?: string | null;
+  maxParticipants?: number | null;
+  scheduledStartAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,7 +92,7 @@ export interface BracketMatch {
   matchIndex: number;
   left: BracketSide;
   right: BracketSide;
-  status: "SCHEDULED" | "AUTO_ADVANCE" | "PENDING" | "COMPLETED";
+  status: FixtureStatus;
   autoAdvanceWinner: string | null;
 }
 
@@ -57,14 +114,14 @@ export interface SingleEliminationBracket {
 
 export interface DEMatch {
   id: string;
-  bracket: "WINNERS" | "LOSERS" | "GRAND_FINAL";
+  bracket: BracketType;
   roundIndex: number;
   matchIndex: number;
   leftLabel: string | null;
   rightLabel: string | null;
   leftSeed: number | null;
   rightSeed: number | null;
-  status: "SCHEDULED" | "PENDING" | "AUTO_ADVANCE" | "COMPLETED";
+  status: FixtureStatus;
   autoAdvanceWinner: string | null;
   winnerGoesTo: string | null;
   loserGoesTo: string | null;
@@ -72,7 +129,7 @@ export interface DEMatch {
 
 export interface DERound {
   roundIndex: number;
-  bracket: "WINNERS" | "LOSERS" | "GRAND_FINAL";
+  bracket: BracketType;
   title: string;
   matches: DEMatch[];
 }
@@ -138,7 +195,7 @@ export interface TournamentParticipant {
   id: string;
   name: string;
   seed: number | null;
-  type: "INDIVIDUAL" | "TEAM";
+  type: ParticipantType;
   createdAt: string;
 }
 
@@ -146,15 +203,18 @@ export interface TournamentStage {
   id: string;
   name: string;
   sequence: number;
-  format: string;
-  rankingRule: string;
-  status: string;
+  format: CompetitionFormat;
+  rankingRule: RankingRule;
+  status: StageStatus;
+  // Stores format-specific settings: totalRounds, playoffTeamCount, etc.
+  config?: Record<string, unknown> | null;
   createdAt: string;
 }
 
 export interface StageFixture {
   id: string;
   code?: string | null;
+  bracket?: BracketType | null;
   roundIndex: number;
   matchIndex: number;
   leftParticipantId: string | null;
@@ -163,9 +223,8 @@ export interface StageFixture {
   rightLabel: string | null;
   leftScore: number | null;
   rightScore: number | null;
-  status: string;
+  status: FixtureStatus;
   autoAdvanceParticipantId: string | null;
-  bracket?: string | null;
   winnerGoesTo?: string | null;
   loserGoesTo?: string | null;
 }
@@ -229,11 +288,12 @@ export interface StandingRow {
 export interface PerformanceEntry {
   id: string;
   stageId: string;
+  fixtureId?: string | null;       // NEW: links entry to a specific heat/fixture
   participantId: string;
   participantName: string;
   metricValue: number;
   unit: string | null;
   rank: number | null;
-  metadata: string | null;
+  metadata: Record<string, unknown> | null;  // FIX: was string | null
   createdAt: string;
 }
