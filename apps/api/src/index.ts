@@ -15,6 +15,8 @@ import {
   generateDoubleEliminationStage,
   generateSwissStage,
   generateLeaguePlusPlayoffStage,
+  generateHeatsPlusFinalStage,
+  generateMultiEventPointsStage,
   generatePlayoffStage,
   regenerateSwissRoundPairings,
   getTournamentById,
@@ -327,6 +329,52 @@ app.post("/api/tournaments/:id/stages/league-plus-playoff", async (request, resp
   }
 });
 
+const heatsPlusFinalSchema = z.object({
+  stageName: z.string().min(1).max(120).optional(),
+  participantsPerHeat: z.number().int().min(2).max(32).optional(),
+});
+
+app.post("/api/tournaments/:id/stages/heats-plus-final", async (request, response) => {
+  const parsedBody = heatsPlusFinalSchema.safeParse(request.body ?? {});
+  if (!parsedBody.success) {
+    sendValidationError(response, parsedBody.error.issues);
+    return;
+  }
+  try {
+    const stageData = await generateHeatsPlusFinalStage({
+      tournamentId: request.params.id,
+      stageName: parsedBody.data.stageName,
+      participantsPerHeat: parsedBody.data.participantsPerHeat,
+    });
+    response.status(201).json({ data: stageData });
+  } catch (error) {
+    sendOperationError(response, error, "Could not generate heats stage.");
+  }
+});
+
+const multiEventSchema = z.object({
+  stageName: z.string().min(1).max(120).optional(),
+  eventNames: z.array(z.string().min(1).max(80)).min(1).max(20).optional(),
+});
+
+app.post("/api/tournaments/:id/stages/multi-event-points", async (request, response) => {
+  const parsedBody = multiEventSchema.safeParse(request.body ?? {});
+  if (!parsedBody.success) {
+    sendValidationError(response, parsedBody.error.issues);
+    return;
+  }
+  try {
+    const stageData = await generateMultiEventPointsStage({
+      tournamentId: request.params.id,
+      stageName: parsedBody.data.stageName,
+      eventNames: parsedBody.data.eventNames,
+    });
+    response.status(201).json({ data: stageData });
+  } catch (error) {
+    sendOperationError(response, error, "Could not generate multi-event stage.");
+  }
+});
+
 const playoffSchema = z.object({
   leagueStageId: z.string().min(1),
   playoffTeamCount: z.number().int().min(2).max(32).default(4),
@@ -424,6 +472,7 @@ app.get("/api/stages/:stageId/standings", async (request, response) => {
 
 const addPerformanceSchema = z.object({
   participantId: z.string().min(1),
+  fixtureId: z.string().min(1).optional(),
   metricValue: z.number(),
   unit: z.string().max(20).optional(),
   metadata: z.string().max(500).optional(),

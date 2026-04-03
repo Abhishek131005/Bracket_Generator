@@ -269,6 +269,34 @@ export interface GeneratedRoundRobinStage {
   };
 }
 
+// ── Heats + Final ─────────────────────────────────────────────────────────────
+
+export interface HeatParticipant {
+  participantId: string;
+  participantName: string;
+  seed?: number;
+  lane: number;
+}
+
+export interface Heat {
+  heatNumber: number;
+  title: string;
+  participants: HeatParticipant[];
+}
+
+export interface HeatsPlusFinalStructure {
+  format: "HEATS_PLUS_FINAL";
+  participantCount: number;
+  participantsPerHeat: number;
+  heatCount: number;
+  heats: Heat[];
+}
+
+export interface GeneratedHeatsPlusFinalStage {
+  stage: TournamentStage;
+  structure: HeatsPlusFinalStructure;
+}
+
 // ── Standings & Leaderboard ───────────────────────────────────────────────────
 
 export interface StandingRow {
@@ -288,12 +316,32 @@ export interface StandingRow {
 export interface PerformanceEntry {
   id: string;
   stageId: string;
-  fixtureId?: string | null;       // NEW: links entry to a specific heat/fixture
+  fixtureId?: string | null;
   participantId: string;
   participantName: string;
   metricValue: number;
   unit: string | null;
   rank: number | null;
-  metadata: Record<string, unknown> | null;  // FIX: was string | null
+  metadata: Record<string, unknown> | null;
   createdAt: string;
+}
+
+// ── Multi-Event Points ────────────────────────────────────────────────────────
+
+export interface MultiEventPointsEvent {
+  id: string;
+  index: number;
+  name: string;
+}
+
+export interface MultiEventPointsStructure {
+  format: "MULTI_EVENT_POINTS";
+  participantCount: number;
+  eventCount: number;
+  events: MultiEventPointsEvent[];
+}
+
+export interface GeneratedMultiEventPointsStage {
+  stage: TournamentStage;
+  structure: MultiEventPointsStructure;
 }

@@ -3,6 +3,8 @@ import {
   GeneratedDoubleEliminationStage,
   GeneratedSwissStage,
   GeneratedLeaguePlusPlayoffStage,
+  GeneratedHeatsPlusFinalStage,
+  GeneratedMultiEventPointsStage,
   SingleEliminationBracket,
   DoubleEliminationBracket,
   SportDefinition,
@@ -178,6 +180,23 @@ export async function regenerateSwissRoundPairings(
   return body.data;
 }
 
+export async function generateHeatsPlusFinalStageForTournament(
+  tournamentId: string,
+  stageName?: string,
+  participantsPerHeat?: number
+): Promise<GeneratedHeatsPlusFinalStage> {
+  const res = await fetch(`/api/tournaments/${tournamentId}/stages/heats-plus-final`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...(stageName ? { stageName } : {}),
+      ...(participantsPerHeat ? { participantsPerHeat } : {}),
+    }),
+  });
+  const body = await parseResponse<ApiItemResponse<GeneratedHeatsPlusFinalStage>>(res);
+  return body.data;
+}
+
 export async function fetchStageFixtures(stageId: string): Promise<StageFixture[]> {
   const res = await fetch(`/api/stages/${stageId}/fixtures`);
   const body = await parseResponse<ApiListResponse<StageFixture>>(res);
@@ -214,14 +233,32 @@ export async function addPerformanceEntry(
   stageId: string,
   participantId: string,
   metricValue: number,
-  unit?: string
+  unit?: string,
+  fixtureId?: string
 ): Promise<PerformanceEntry> {
   const res = await fetch(`/api/stages/${stageId}/performances`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ participantId, metricValue, unit }),
+    body: JSON.stringify({ participantId, metricValue, unit, ...(fixtureId ? { fixtureId } : {}) }),
   });
   const body = await parseResponse<ApiItemResponse<PerformanceEntry>>(res);
+  return body.data;
+}
+
+export async function generateMultiEventPointsStageForTournament(
+  tournamentId: string,
+  stageName?: string,
+  eventNames?: string[]
+): Promise<GeneratedMultiEventPointsStage> {
+  const res = await fetch(`/api/tournaments/${tournamentId}/stages/multi-event-points`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...(stageName ? { stageName } : {}),
+      ...(eventNames?.length ? { eventNames } : {}),
+    }),
+  });
+  const body = await parseResponse<ApiItemResponse<GeneratedMultiEventPointsStage>>(res);
   return body.data;
 }
 

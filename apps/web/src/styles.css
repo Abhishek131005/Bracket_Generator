@@ -2200,3 +2200,230 @@ body::after {
     padding-right: 1rem;
   }
 }
+/* ─── Heats View ─────────────────────────────────────────────────────────────── */
+
+.heats-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1rem 0;
+}
+
+.heats-meta {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.heats-meta span {
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: rgba(46, 196, 182, 0.12);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(46, 196, 182, 0.25);
+}
+
+.heats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.heat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.heat-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.9rem;
+  background: rgba(199, 244, 100, 0.06);
+  border-bottom: 1px solid rgba(199, 244, 100, 0.12);
+}
+
+.heat-title {
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  color: var(--accent-lime);
+}
+
+.heat-count {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.heat-lane-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.heat-lane-header {
+  display: grid;
+  grid-template-columns: 36px 1fr 44px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.heat-lane-row {
+  display: grid;
+  grid-template-columns: 36px 1fr 44px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.82rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  align-items: center;
+  transition: background 0.12s;
+}
+
+.heat-lane-row:last-child {
+  border-bottom: none;
+}
+
+.heat-lane-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.heat-lane-num {
+  font-family: "Space Mono", monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-lime);
+  opacity: 0.75;
+}
+
+.heat-athlete-name {
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.heat-seed {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: right;
+  font-family: "Space Mono", monospace;
+}
+
+.heats-note {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 0.5rem 0;
+}
+
+/* ─── Multi-Event Points ─────────────────────────────────────────────────────── */
+
+.multi-event-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.me-meta-bar {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.me-meta-bar span {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+}
+
+.me-entry-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.me-pts-input {
+  max-width: 100px;
+}
+
+.me-grid-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.me-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.me-grid th {
+  background: rgba(255,255,255,0.04);
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.me-th-rank { width: 2.5rem; text-align: center; }
+.me-th-total { text-align: right; min-width: 70px; }
+.me-th-event { text-align: center; min-width: 80px; }
+
+.me-grid td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  color: var(--text-main);
+  vertical-align: middle;
+}
+
+.me-row:last-child td { border-bottom: none; }
+.me-row:hover td { background: rgba(255,255,255,0.03); }
+
+.me-row-leader td { background: rgba(199, 244, 100, 0.04); }
+.me-row-leader:hover td { background: rgba(199, 244, 100, 0.07); }
+
+.me-td-rank { text-align: center; }
+.me-td-name { font-weight: 600; }
+.me-td-score { text-align: center; }
+.me-td-total { text-align: right; font-weight: 700; color: var(--accent-gold); }
+
+.me-score-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.me-score-empty { color: var(--text-muted); font-size: 0.8rem; }
+
+.me-del-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.65rem;
+  padding: 0.1rem 0.25rem;
+  border-radius: 3px;
+  line-height: 1;
+}
+.me-del-btn:hover { color: var(--accent-coral); background: rgba(255,107,53,0.12); }
+
+.me-pts-unit { font-size: 0.72rem; color: var(--text-dim); font-weight: 400; }

@@ -6,6 +6,8 @@ import { buildRoundRobinFixtures } from "../engine/roundRobin.js";
 import { buildDoubleEliminationBracket } from "../engine/doubleElimination.js";
 import { buildSwissFixtures, generateSwissRoundPairings } from "../engine/swiss.js";
 import { calculateStandings, calculateLeaderboard } from "../engine/standings.js";
+import { buildHeatsPlusFinalStructure, type HeatsPlusFinalStructure } from "../engine/heatsPlusFinal.js";
+import { buildMultiEventConfig, type MultiEventPointsStructure } from "../engine/multiEventPoints.js";
 import { CompetitionFormat, RankingRule, Tournament } from "../types.js";
 
 type StageStatus = "DRAFT" | "PUBLISHED" | "COMPLETED";
@@ -26,6 +28,7 @@ export interface TournamentStage {
   format: CompetitionFormat;
   rankingRule: RankingRule;
   status: StageStatus;
+  config?: Record<string, unknown> | null;
   createdAt: string;
 }
 
@@ -64,6 +67,7 @@ export interface StandingRow {
 export interface PerformanceEntryRecord {
   id: string;
   stageId: string;
+  fixtureId: string | null;
   participantId: string;
   participantName: string;
   metricValue: number;
@@ -111,6 +115,7 @@ function mapStage(record: any): TournamentStage {
     format: record.format as CompetitionFormat,
     rankingRule: record.rankingRule as RankingRule,
     status: record.status as StageStatus,
+    config: record.config ? JSON.parse(record.config) : null,
     createdAt: record.createdAt.toISOString(),
   };
 }
@@ -419,7 +424,7 @@ export async function generateDoubleEliminationStage(input: GenerateStageInput):
   };
 
   // Flatten all rounds from the bracket and persist
-  const allMatches: Prisma.FixtureCreateManyInput[] = bracket.allRounds.flatMap((round) =>
+  const allMatches = bracket.allRounds.flatMap((round) =>
     round.matches.map((match) => {
       const leftP = match.leftLabel ? participantByName.get(match.leftLabel) : undefined;
       const rightP = match.rightLabel ? participantByName.get(match.rightLabel) : undefined;
@@ -496,7 +501,7 @@ export async function generateSwissStage(input: GenerateStageInput): Promise<{
     },
   });
 
-  const allMatches: Prisma.FixtureCreateManyInput[] = schedule.rounds.flatMap((round) =>
+  const allMatches = schedule.rounds.flatMap((round) =>
     round.matches.map((match) => ({
       stageId: stage.id,
       roundIndex: match.roundIndex,
@@ -730,6 +735,124 @@ export async function generatePlayoffStage(
   return { stage: mapStage(stage), fixtures, bracket };
 }
 
+// ── Heats + Final ─────────────────────────────────────────────────────────────
+
+export async function generateHeatsPlusFinalStage(
+  input: GenerateStageInput & { participantsPerHeat?: number }
+): Promise<{
+  stage: TournamentStage;
+  structure: HeatsPlusFinalStructure;
+}> {
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: input.tournamentId },
+    include: {
+      participants: { orderBy: [{ seed: "asc" }, { createdAt: "asc" }] },
+    },
+  });
+
+  if (!tournament) throw new Error("Tournament not found.");
+  if (tournament.participants.length < 2)
+    throw new Error("Add at least 2 participants before generating a stage.");
+
+  const participantsInput = tournament.participants.map((p: any) => ({
+    id: p.id,
+    name: p.name,
+    seed: p.seed ?? undefined,
+  }));
+
+  const structure = buildHeatsPlusFinalStructure(
+    participantsInput,
+    input.participantsPerHeat
+  );
+
+  const nextSequence = await getNextSequence(input.tournamentId);
+
+  const stage = await prisma.stage.create({
+    data: {
+      tournamentId: tournament.id,
+      sequence: nextSequence,
+      name: input.stageName?.trim() || `Heats — Stage ${nextSequence}`,
+      format: "HEATS_PLUS_FINAL",
+      rankingRule: tournament.rankingRule,
+      status: "DRAFT",
+      config: JSON.stringify(structure),
+    },
+  });
+
+  return { stage: mapStage(stage), structure };
+}
+
+export async function generateMultiEventPointsStage(
+  input: GenerateStageInput & { eventNames?: string[] }
+): Promise<{ stage: TournamentStage; structure: MultiEventPointsStructure }> {
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: input.tournamentId },
+    include: {
+      participants: { orderBy: [{ seed: "asc" }, { createdAt: "asc" }] },
+    },
+  });
+
+  if (!tournament) throw new Error("Tournament not found.");
+  if (tournament.participants.length < 2)
+    throw new Error("Add at least 2 participants before generating a stage.");
+
+  const { participantCount, events } = buildMultiEventConfig(
+    tournament.participants.length,
+    input.eventNames
+  );
+
+  const nextSeq = await getNextSequence(input.tournamentId);
+
+  // Create the stage without config first (we need fixture IDs)
+  const stageRecord = await prisma.stage.create({
+    data: {
+      tournamentId: tournament.id,
+      sequence: nextSeq,
+      name: input.stageName?.trim() || `Multi-Event — Stage ${nextSeq}`,
+      format: "MULTI_EVENT_POINTS",
+      rankingRule: "AGGREGATE_POINTS_DESC",
+      status: "DRAFT",
+      config: null,
+    },
+  });
+
+  // Create one fixture per event (no participants — just a named slot)
+  await prisma.fixture.createMany({
+    data: events.map((ev) => ({
+      stageId: stageRecord.id,
+      code: `event-${ev.index + 1}`,
+      roundIndex: 0,
+      matchIndex: ev.index,
+      leftLabel: ev.name,
+      status: "IN_PROGRESS",
+    })),
+  });
+
+  // Fetch fixtures in order to get their DB-generated IDs
+  const fixtureRecords = await prisma.fixture.findMany({
+    where: { stageId: stageRecord.id },
+    orderBy: { matchIndex: "asc" },
+  });
+
+  const structure: MultiEventPointsStructure = {
+    format: "MULTI_EVENT_POINTS",
+    participantCount,
+    eventCount: events.length,
+    events: fixtureRecords.map((f: any, i: number) => ({
+      id: f.id,
+      index: i,
+      name: f.leftLabel ?? `Event ${i + 1}`,
+    })),
+  };
+
+  const updatedStage = await prisma.stage.update({
+    where: { id: stageRecord.id },
+    data: { config: JSON.stringify(structure) },
+  });
+
+  return { stage: mapStage(updatedStage), structure };
+}
+
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 export async function listFixturesByStage(stageId: string): Promise<StageFixture[]> {
@@ -922,7 +1045,7 @@ async function hydrateDoubleEliminationFixtureMetadata(stageId: string): Promise
     }
   }
 
-  const updates = stage.fixtures.map((fixture) => {
+  const updates = stage.fixtures.map((fixture: any) => {
     let bracket: "WINNERS" | "LOSERS" | "GRAND_FINAL";
     let localRoundIndex: number;
 
@@ -1279,6 +1402,7 @@ export async function getStandingsByStage(stageId: string): Promise<StandingRow[
 
 type AddPerformanceInput = {
   stageId: string;
+  fixtureId?: string;
   participantId: string;
   metricValue: number;
   unit?: string;
@@ -1297,6 +1421,7 @@ export async function addPerformanceEntry(
   const entry = await prisma.performanceEntry.create({
     data: {
       stageId: input.stageId,
+      fixtureId: input.fixtureId ?? null,
       participantId: input.participantId,
       metricValue: input.metricValue,
       unit: input.unit ?? null,
@@ -1307,6 +1432,7 @@ export async function addPerformanceEntry(
   return {
     id: entry.id,
     stageId: entry.stageId,
+    fixtureId: entry.fixtureId,
     participantId: entry.participantId,
     participantName: participant.name,
     metricValue: entry.metricValue,
@@ -1327,6 +1453,7 @@ export async function listPerformanceEntries(stageId: string): Promise<Performan
   return entries.map((e: any) => ({
     id: e.id,
     stageId: e.stageId,
+    fixtureId: e.fixtureId,
     participantId: e.participantId,
     participantName: e.participant.name,
     metricValue: e.metricValue,
