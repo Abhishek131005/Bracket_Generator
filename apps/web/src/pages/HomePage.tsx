@@ -3,14 +3,14 @@ import { useMemo } from "react";
 import { FORMAT_LABELS, VIEW_COLORS } from "../constants";
 import { SportCard } from "../components/SportCard";
 import { StatCard } from "../components/StatCard";
-import type { Page } from "../appTypes";
-import type { SportDefinition, Tournament } from "../types";
+import { useAppStore } from "../store";
+import { useSports, useTournaments } from "../hooks/useQueries";
 
-export function HomePage({ sports, tournaments, setPage }: {
-  sports: SportDefinition[];
-  tournaments: Tournament[];
-  setPage: (p: Page) => void;
-}) {
+export function HomePage() {
+  const setPage = useAppStore((s) => s.setPage);
+  const { data: sports = [] } = useSports();
+  const { data: tournaments = [] } = useTournaments();
+
   const viewStats = useMemo(() => {
     const s = { BRACKET: 0, HYBRID: 0, STANDINGS: 0, LEADERBOARD: 0 };
     for (const sport of sports) s[sport.primaryView as keyof typeof s] += 1;

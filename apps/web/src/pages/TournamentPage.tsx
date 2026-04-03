@@ -1,20 +1,11 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { type FormEvent, useEffect, useState } from "react";
-import {
-  addParticipantsToTournament,
-  fetchTournamentParticipants,
-  fetchTournamentStages,
-  generateDoubleEliminationStageForTournament,
-  generateHeatsPlusFinalStageForTournament,
-  generateMultiEventPointsStageForTournament,
-  generateLeaguePlusPlayoffStageForTournament,
-  generateRoundRobinStageForTournament,
-  generateSingleEliminationStageForTournament,
-  generateSwissStageForTournament,
-} from "../api";
 import { StageDetailPanel } from "../components/StageDetailPanel";
 import { FORMAT_LABELS } from "../constants";
-import type { SingleEliminationBracket, SportDefinition, Tournament, TournamentParticipant, TournamentStage } from "../types";
+import { useParticipants, useStages, useTournaments } from "../hooks/useQueries";
+import { useAddParticipants, useGenerateStage } from "../hooks/useMutations";
+import { useAppStore } from "../store";
+import type { TournamentStage } from "../types";
 
 type GenerateFormat =
   | "single-elimination"
@@ -35,106 +26,93 @@ const GENERATE_FORMATS: { id: GenerateFormat; label: string }[] = [
   { id: "multi-event-points", label: "Multi-Event" },
 ];
 
-export function TournamentPage({ tournaments, sports }: { tournaments: Tournament[]; sports: SportDefinition[] }) {
-  const [selectedId, setSelectedId] = useState(tournaments[0]?.id ?? "");
-  const [participants, setParticipants] = useState<TournamentParticipant[]>([]);
-  const [stages, setStages] = useState<TournamentStage[]>([]);
-  const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
+export function TournamentPage() {
+  const selectedId = useAppStore((s) => s.selectedTournamentId);
+  const setSelectedId = useAppStore((s) => s.setSelectedTournamentId);
+  const selectedStageId = useAppStore((s) => s.selectedStageId);
+  const setSelectedStageId = useAppStore((s) => s.setSelectedStageId);
+
+  const { data: tournaments = [] } = useTournaments();
+  const { data: participants = [], isLoading: loadingParticipants } = useParticipants(selectedId);
+  const { data: stages = [], isLoading: loadingStages } = useStages(selectedId);
+
+  const addParticipants = useAddParticipants(selectedId);
+  const generateStage = useGenerateStage(selectedId);
+
   const [bulkInput, setBulkInput] = useState("");
   const [stageName, setStageName] = useState("");
   const [swissRounds, setSwissRounds] = useState("");
   const [heatsPerHeat, setHeatsPerHeat] = useState("");
   const [multiEventNames, setMultiEventNames] = useState("");
-  const [isAdding, setIsAdding] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [generateFormat, setGenerateFormat] = useState<GenerateFormat>("single-elimination");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [addError, setAddError] = useState("");
+  const [genError, setGenError] = useState("");
   const [mainTab, setMainTab] = useState<"participants" | "stages">("participants");
+
+  // Initialise selected tournament to first on load
+  useEffect(() => {
+    if (!selectedId && tournaments.length > 0) setSelectedId(tournaments[0].id);
+  }, [tournaments, selectedId]);
+
+  // Auto-select first stage when stages load for a new tournament
+  useEffect(() => {
+    if (stages.length > 0 && !selectedStageId) setSelectedStageId(stages[0].id);
+  }, [stages]);
 
   const activeTournament = tournaments.find((t) => t.id === selectedId) ?? null;
   const activeStage = stages.find((s) => s.id === selectedStageId) ?? null;
 
-  useEffect(() => {
-    if (!selectedId) return;
-    setLoading(true); setSelectedStageId(null);
-    Promise.all([fetchTournamentParticipants(selectedId), fetchTournamentStages(selectedId)])
-      .then(([p, s]) => { setParticipants(p); setStages(s); if (s.length > 0) setSelectedStageId(s[0].id); })
-      .catch(() => setError("Could not load tournament data."))
-      .finally(() => setLoading(false));
-  }, [selectedId]);
+  function handleTournamentChange(id: string) {
+    setSelectedId(id);   // also resets selectedStageId via store action
+    setMainTab("participants");
+  }
 
   async function handleAddParticipants(e: FormEvent) {
-    e.preventDefault(); setError("");
+    e.preventDefault();
+    setAddError("");
     const names = bulkInput.split("\n").map((n) => n.trim()).filter(Boolean);
     if (!names.length) return;
-    try {
-      setIsAdding(true);
-      const p = await addParticipantsToTournament(selectedId, names);
-      setParticipants(p); setBulkInput("");
-    } catch (err) { setError(err instanceof Error ? err.message : "Could not add participants."); }
-    finally { setIsAdding(false); }
+    addParticipants.mutate(names, {
+      onSuccess: () => setBulkInput(""),
+      onError: (err) => setAddError(err instanceof Error ? err.message : "Could not add participants."),
+    });
   }
 
   async function handleGenerateStage(e: FormEvent) {
-    e.preventDefault(); setError("");
-    try {
-      setIsGenerating(true);
-      if (generateFormat === "single-elimination") {
-        const result = await generateSingleEliminationStageForTournament(selectedId, stageName || undefined);
-        setStages((prev) => mergeStages(prev, result.stage));
-        setSelectedStageId(result.stage.id);
-      } else if (generateFormat === "round-robin") {
-        const result = await generateRoundRobinStageForTournament(selectedId, stageName || undefined);
-        setStages((prev) => mergeStages(prev, result.stage));
-        setSelectedStageId(result.stage.id);
-      } else if (generateFormat === "double-elimination") {
-        const result = await generateDoubleEliminationStageForTournament(selectedId, stageName || undefined);
-        setStages((prev) => mergeStages(prev, result.stage));
-        setSelectedStageId(result.stage.id);
-      } else if (generateFormat === "swiss") {
-        const rounds = swissRounds ? parseInt(swissRounds) : undefined;
-        const result = await generateSwissStageForTournament(selectedId, stageName || undefined, rounds);
-        setStages((prev) => mergeStages(prev, result.stage));
-        setSelectedStageId(result.stage.id);
-      } else if (generateFormat === "league-plus-playoff") {
-        const result = await generateLeaguePlusPlayoffStageForTournament(selectedId, stageName || undefined);
-        setStages((prev) => mergeStages(prev, result.leagueStage));
-        setSelectedStageId(result.leagueStage.id);
-      } else if (generateFormat === "heats-plus-final") {
-        const perHeat = heatsPerHeat ? parseInt(heatsPerHeat) : undefined;
-        const result = await generateHeatsPlusFinalStageForTournament(selectedId, stageName || undefined, perHeat);
-        setStages((prev) => mergeStages(prev, result.stage));
-        setSelectedStageId(result.stage.id);
-      } else if (generateFormat === "multi-event-points") {
+    e.preventDefault();
+    setGenError("");
+
+    const payload = (() => {
+      if (generateFormat === "swiss")
+        return { format: generateFormat, stageName: stageName || undefined, totalRounds: swissRounds ? parseInt(swissRounds) : undefined };
+      if (generateFormat === "heats-plus-final")
+        return { format: generateFormat, stageName: stageName || undefined, participantsPerHeat: heatsPerHeat ? parseInt(heatsPerHeat) : undefined };
+      if (generateFormat === "multi-event-points") {
         const names = multiEventNames.split(",").map((n) => n.trim()).filter(Boolean);
-        const result = await generateMultiEventPointsStageForTournament(
-          selectedId,
-          stageName || undefined,
-          names.length ? names : undefined
-        );
-        setStages((prev) => mergeStages(prev, result.stage));
-        setSelectedStageId(result.stage.id);
+        return { format: generateFormat, stageName: stageName || undefined, eventNames: names.length ? names : undefined };
       }
-      setStageName(""); setMainTab("stages");
-    } catch (err) { setError(err instanceof Error ? err.message : "Could not generate stage. Add at least 2 participants first."); }
-    finally { setIsGenerating(false); }
+      return { format: generateFormat, stageName: stageName || undefined };
+    })();
+
+    generateStage.mutate(payload as any, {
+      onSuccess: (result) => {
+        setStageName("");
+        setMainTab("stages");
+        // Select the newly created stage
+        const newStage: TournamentStage = "stage" in result ? result.stage : (result as any).leagueStage;
+        if (newStage) setSelectedStageId(newStage.id);
+      },
+      onError: (err) => setGenError(err instanceof Error ? err.message : "Could not generate stage. Add at least 2 participants first."),
+    });
   }
 
-  function mergeStages(prev: TournamentStage[], newStage: TournamentStage): TournamentStage[] {
-    return Array.from(new Map([newStage, ...prev].map((s) => [s.id, s])).values()).sort((a, b) => a.sequence - b.sequence);
-  }
-
-  function handlePlayoffGenerate(newStage: TournamentStage, _bracket: SingleEliminationBracket) {
-    setStages((prev) => mergeStages(prev, newStage));
-    setSelectedStageId(newStage.id);
-  }
+  const loading = loadingParticipants || loadingStages;
 
   return (
     <motion.div className="page-tournament" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
       <div className="tournament-selector-row">
         <h1 className="page-title">Tournament Hub</h1>
-        <select className="field-select tournament-picker" value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+        <select className="field-select tournament-picker" value={selectedId} onChange={(e) => handleTournamentChange(e.target.value)}>
           <option value="">Select a tournament...</option>
           {tournaments.map((t) => <option key={t.id} value={t.id}>{t.name} — {t.sportName}</option>)}
         </select>
@@ -157,8 +135,6 @@ export function TournamentPage({ tournaments, sports }: { tournaments: Tournamen
         </motion.div>
       )}
 
-      {error && <p className="form-error">{error}</p>}
-
       {activeTournament && (
         <div className="tournament-body-v2">
           <div className="tournament-sidebar">
@@ -178,8 +154,9 @@ export function TournamentPage({ tournaments, sports }: { tournaments: Tournamen
                     <textarea className="field-input field-textarea" value={bulkInput}
                       onChange={(e) => setBulkInput(e.target.value)}
                       placeholder={"Team Alpha\nTeam Bravo\nTeam Charlie"} rows={5} />
-                    <button type="submit" className="btn-lime btn-full" disabled={isAdding || !selectedId}>
-                      {isAdding ? "Adding..." : "Add Participants"}
+                    {addError && <p className="form-error">{addError}</p>}
+                    <button type="submit" className="btn-lime btn-full" disabled={addParticipants.isPending || !selectedId}>
+                      {addParticipants.isPending ? "Adding..." : "Add Participants"}
                     </button>
                   </form>
                   <div className="participant-list-compact">
@@ -221,8 +198,9 @@ export function TournamentPage({ tournaments, sports }: { tournaments: Tournamen
                         onChange={(e) => setMultiEventNames(e.target.value)}
                         placeholder="Events: 100m, 200m, Long Jump (default: 3 events)" />
                     )}
-                    <button type="submit" className="btn-gold btn-full" disabled={isGenerating || !selectedId}>
-                      {isGenerating ? "Generating..." : "⚡ Generate Stage"}
+                    {genError && <p className="form-error">{genError}</p>}
+                    <button type="submit" className="btn-gold btn-full" disabled={generateStage.isPending || !selectedId}>
+                      {generateStage.isPending ? "Generating..." : "⚡ Generate Stage"}
                     </button>
                     <p className="action-hint">Requires at least 2 participants.</p>
                   </form>
@@ -251,7 +229,6 @@ export function TournamentPage({ tournaments, sports }: { tournaments: Tournamen
               <StageDetailPanel
                 stage={activeStage}
                 participants={participants}
-                onPlayoffGenerate={handlePlayoffGenerate}
                 tournamentId={selectedId}
               />
             ) : (

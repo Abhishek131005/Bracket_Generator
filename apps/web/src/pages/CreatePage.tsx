@@ -1,31 +1,41 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { type FormEvent, useState } from "react";
-import { createTournament } from "../api";
 import { SportPickerModal } from "../components/SportPickerModal";
 import { FORMAT_LABELS, VIEW_COLORS } from "../constants";
-import type { SportDefinition, Tournament } from "../types";
+import { useSports } from "../hooks/useQueries";
+import { useCreateTournament } from "../hooks/useMutations";
+import { useAppStore } from "../store";
 
-export function CreatePage({ sports, onCreated }: {
-  sports: SportDefinition[];
-  onCreated: (t: Tournament) => void;
-}) {
+export function CreatePage() {
+  const setPage = useAppStore((s) => s.setPage);
+  const { data: sports = [] } = useSports();
+  const createTournament = useCreateTournament();
+
   const [tournamentName, setTournamentName] = useState("");
   const [selectedSportId, setSelectedSportId] = useState<number | "">("");
   const [showPicker, setShowPicker] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState<Tournament | null>(null);
+  const [successName, setSuccessName] = useState("");
+
   const selectedSport = sports.find((s) => s.id === Number(selectedSportId)) ?? null;
 
   async function handleSubmit(e: FormEvent) {
-    e.preventDefault(); setError("");
+    e.preventDefault();
+    setError("");
     if (!tournamentName.trim() || !selectedSportId) { setError("Tournament name and sport are required."); return; }
-    try {
-      setIsSaving(true);
-      const t = await createTournament({ name: tournamentName.trim(), sportId: Number(selectedSportId) });
-      setSuccess(t); onCreated(t); setTournamentName(""); setSelectedSportId("");
-    } catch (err) { setError(err instanceof Error ? err.message : "Could not create tournament."); }
-    finally { setIsSaving(false); }
+    createTournament.mutate(
+      { name: tournamentName.trim(), sportId: Number(selectedSportId) },
+      {
+        onSuccess: (t) => {
+          setSuccessName(t.name);
+          setTournamentName("");
+          setSelectedSportId("");
+        },
+        onError: (err) => {
+          setError(err instanceof Error ? err.message : "Could not create tournament.");
+        },
+      }
+    );
   }
 
   return (
@@ -70,13 +80,14 @@ export function CreatePage({ sports, onCreated }: {
               </motion.div>
             )}
             {error && <p className="form-error">{error}</p>}
-            {success && (
+            {successName && (
               <motion.div className="form-success" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
-                ✓ <strong>{success.name}</strong> created! Head to Tournament Hub.
+                ✓ <strong>{successName}</strong> created!{" "}
+                <button type="button" className="link-btn" onClick={() => setPage("tournament")}>Go to Tournament Hub →</button>
               </motion.div>
             )}
-            <button type="submit" className="btn-primary btn-full" disabled={isSaving}>
-              {isSaving ? "Creating..." : "Create Tournament →"}
+            <button type="submit" className="btn-primary btn-full" disabled={createTournament.isPending}>
+              {createTournament.isPending ? "Creating..." : "Create Tournament →"}
             </button>
           </form>
         </div>

@@ -1,12 +1,13 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchStageFixtures, generatePlayoffStage } from "../api";
 import { buildBracketFromFixtures, buildDEBracketFromFixtures } from "../bracketUtils";
 import { FORMAT_LABELS } from "../constants";
+import { useFixtures } from "../hooks/useQueries";
+import { useGeneratePlayoff } from "../hooks/useMutations";
+import { useAppStore } from "../store";
 import type {
   DoubleEliminationBracket,
   SingleEliminationBracket,
-  StageFixture,
   TournamentParticipant,
   TournamentStage,
 } from "../types";
@@ -14,36 +15,34 @@ import { BracketCanvas } from "./BracketCanvas";
 import { DEBracketCanvas } from "./DEBracketCanvas";
 import { FixturesView } from "./FixturesView";
 import { HeatsView } from "./HeatsView";
-import { MultiEventView } from "./MultiEventView";
 import { LeaderboardView } from "./LeaderboardView";
+import { MultiEventView } from "./MultiEventView";
 import { StandingsView } from "./StandingsView";
 
 export function StageDetailPanel({
-  stage, participants,
-  onPlayoffGenerate, tournamentId,
+  stage, participants, tournamentId,
 }: {
   stage: TournamentStage;
   participants: TournamentParticipant[];
-  onPlayoffGenerate?: (stage: TournamentStage, bracket: SingleEliminationBracket) => void;
   tournamentId: string;
 }) {
+  const setSelectedStageId = useAppStore((s) => s.setSelectedStageId);
+  const generatePlayoff = useGeneratePlayoff(tournamentId);
+
   const isLeaderboard = ["DIRECT_FINAL", "HEATS_PLUS_FINAL", "MULTI_EVENT_POINTS", "JUDGED_LEADERBOARD"].includes(stage.format);
   const isHeatsPlusFinal = stage.format === "HEATS_PLUS_FINAL";
   const isMultiEvent = stage.format === "MULTI_EVENT_POINTS";
   const isPointsTable = ["ROUND_ROBIN", "SWISS", "LEAGUE_PLUS_PLAYOFF"].includes(stage.format);
   const isBracket = stage.format === "SINGLE_ELIMINATION";
   const isDEBracket = stage.format === "DOUBLE_ELIMINATION";
-  const isSwiss = stage.format === "SWISS";
   const isLeaguePlusPlayoff = stage.format === "LEAGUE_PLUS_PLAYOFF";
 
+  // Fixtures from TanStack Query (shared cache — no double requests)
+  const { data: fixtures = [] } = useFixtures(isBracket || isDEBracket ? stage.id : "");
+
   const [liveBracket, setLiveBracket] = useState<SingleEliminationBracket | null>(null);
-  const [bracketLoading, setBracketLoading] = useState(false);
-
   const [liveDEBracket, setLiveDEBracket] = useState<DoubleEliminationBracket | null>(null);
-  const [deBracketLoading, setDEBracketLoading] = useState(false);
-
   const [playoffCount, setPlayoffCount] = useState("4");
-  const [generatingPlayoff, setGeneratingPlayoff] = useState(false);
   const [playoffError, setPlayoffError] = useState("");
 
   const tabs = useMemo(() => {
@@ -62,53 +61,35 @@ export function StageDetailPanel({
   const [activeTab, setActiveTab] = useState(tabs[0] ?? "fixtures");
   useEffect(() => { if (!tabs.includes(activeTab)) setActiveTab(tabs[0] ?? "fixtures"); }, [stage.id]);
 
-  const loadBracketFromFixtures = useCallback(async (fixtures?: StageFixture[]) => {
-    if (!isBracket) return;
-    setBracketLoading(true);
-    try {
-      const data = fixtures ?? await fetchStageFixtures(stage.id);
-      setLiveBracket(buildBracketFromFixtures(data, participants.length));
-    } finally {
-      setBracketLoading(false);
-    }
-  }, [stage.id, isBracket, participants.length]);
-
-  const loadDEBracketFromFixtures = useCallback(async (fixtures?: StageFixture[]) => {
-    if (!isDEBracket) return;
-    setDEBracketLoading(true);
-    try {
-      const data = fixtures ?? await fetchStageFixtures(stage.id);
-      setLiveDEBracket(buildDEBracketFromFixtures(data, participants.length));
-    } finally {
-      setDEBracketLoading(false);
-    }
-  }, [stage.id, isDEBracket, participants.length]);
-
+  // Rebuild bracket whenever fixtures data changes from the cache
   useEffect(() => {
-    if (isBracket) loadBracketFromFixtures();
-    if (isDEBracket) loadDEBracketFromFixtures();
-  }, [stage.id, isBracket, isDEBracket]);
+    if (isBracket && fixtures.length > 0) {
+      setLiveBracket(buildBracketFromFixtures(fixtures, participants.length));
+    }
+    if (isDEBracket && fixtures.length > 0) {
+      setLiveDEBracket(buildDEBracketFromFixtures(fixtures, participants.length));
+    }
+  }, [fixtures, isBracket, isDEBracket, participants.length]);
 
-  const handleFixturesChanged = useCallback((fixtures: StageFixture[]) => {
-    if (isBracket) loadBracketFromFixtures(fixtures);
-    if (isDEBracket) loadDEBracketFromFixtures(fixtures);
-  }, [isBracket, isDEBracket, loadBracketFromFixtures, loadDEBracketFromFixtures]);
-
-  const handleTabClick = (tab: string) => {
-    setActiveTab(tab);
-    if (tab === "bracket" && isBracket) loadBracketFromFixtures();
-    if (tab === "de-bracket" && isDEBracket) loadDEBracketFromFixtures();
-  };
+  const handleFixturesChanged = useCallback(() => {
+    // FixturesView invalidates the fixtures query after mutations —
+    // the useEffect above will rebuild the bracket automatically.
+  }, []);
 
   async function handleGeneratePlayoff() {
     const count = parseInt(playoffCount);
     if (isNaN(count) || count < 2) { setPlayoffError("Enter a valid team count (min 2)."); return; }
-    try {
-      setGeneratingPlayoff(true); setPlayoffError("");
-      const result = await generatePlayoffStage(tournamentId, stage.id, count);
-      onPlayoffGenerate?.(result.stage, result.bracket);
-    } catch (err) { setPlayoffError(err instanceof Error ? err.message : "Could not generate playoff."); }
-    finally { setGeneratingPlayoff(false); }
+    setPlayoffError("");
+    generatePlayoff.mutate(
+      { leagueStageId: stage.id, playoffTeamCount: count },
+      {
+        onSuccess: (result) => {
+          const newStage = "stage" in result ? result.stage : null;
+          if (newStage) setSelectedStageId(newStage.id);
+        },
+        onError: (err) => setPlayoffError(err instanceof Error ? err.message : "Could not generate playoff."),
+      }
+    );
   }
 
   return (
@@ -121,7 +102,7 @@ export function StageDetailPanel({
       <div className="tab-row">
         {tabs.map((tab) => (
           <button key={tab} className={`tab-btn ${activeTab === tab ? "active" : ""}`}
-            onClick={() => handleTabClick(tab)}>
+            onClick={() => setActiveTab(tab)}>
             {tab === "fixtures" ? "Fixtures"
               : tab === "standings" ? "Standings"
               : tab === "bracket" ? "Bracket"
@@ -136,7 +117,7 @@ export function StageDetailPanel({
       <AnimatePresence mode="wait">
         {activeTab === "fixtures" && !isLeaderboard && (
           <motion.div key="fx" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <FixturesView stageId={stage.id} isSwiss={isSwiss} onFixturesChanged={handleFixturesChanged} />
+            <FixturesView stageId={stage.id} isSwiss={isLeaderboard ? false : stage.format === "SWISS"} onFixturesChanged={handleFixturesChanged} />
           </motion.div>
         )}
         {activeTab === "standings" && isPointsTable && (
@@ -146,35 +127,24 @@ export function StageDetailPanel({
         )}
         {activeTab === "bracket" && isBracket && (
           <motion.div key="br" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            {bracketLoading ? (
-              <div className="empty-state"><span className="empty-icon">⏳</span><p>Loading bracket...</p></div>
-            ) : liveBracket ? (
+            {liveBracket ? (
               <div className="bracket-section">
                 <div className="bracket-meta">
                   <span>{liveBracket.participantCount} participants</span>
                   <span>{liveBracket.slots} slots</span>
                   <span>{liveBracket.byeCount} byes</span>
-                  <span style={{ color: "var(--accent-lime)", borderColor: "rgba(199,244,100,0.3)" }}>
-                    ✓ Live — updates with scores
-                  </span>
+                  <span style={{ color: "var(--accent-lime)", borderColor: "rgba(199,244,100,0.3)" }}>✓ Live — updates with scores</span>
                 </div>
-                <div className="bracket-scroll">
-                  <BracketCanvas bracket={liveBracket} />
-                </div>
+                <div className="bracket-scroll"><BracketCanvas bracket={liveBracket} /></div>
               </div>
             ) : (
-              <div className="empty-state">
-                <span className="empty-icon">🎯</span>
-                <p>No fixtures found. Generate this stage first.</p>
-              </div>
+              <div className="empty-state"><span className="empty-icon">🎯</span><p>No fixtures found. Generate this stage first.</p></div>
             )}
           </motion.div>
         )}
         {activeTab === "de-bracket" && isDEBracket && (
           <motion.div key="de" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            {deBracketLoading ? (
-              <div className="empty-state"><span className="empty-icon">⏳</span><p>Loading bracket...</p></div>
-            ) : liveDEBracket ? (
+            {liveDEBracket ? (
               <div className="bracket-section">
                 <div className="bracket-meta">
                   <span>{liveDEBracket.participantCount} participants</span>
@@ -182,30 +152,23 @@ export function StageDetailPanel({
                   <span>{liveDEBracket.byeCount} byes</span>
                   <span>{liveDEBracket.winnersRounds.length} WB rounds</span>
                   <span>{liveDEBracket.losersRounds.length} LB rounds</span>
-                  <span style={{ color: "var(--accent-coral)", borderColor: "rgba(255,107,53,0.3)" }}>
-                    ✓ Live — updates with scores
-                  </span>
+                  <span style={{ color: "var(--accent-coral)", borderColor: "rgba(255,107,53,0.3)" }}>✓ Live — updates with scores</span>
                 </div>
-                <div className="bracket-scroll">
-                  <DEBracketCanvas bracket={liveDEBracket} />
-                </div>
+                <div className="bracket-scroll"><DEBracketCanvas bracket={liveDEBracket} /></div>
               </div>
             ) : (
-              <div className="empty-state">
-                <span className="empty-icon">🎯</span>
-                <p>No fixtures found. Generate this stage first.</p>
-              </div>
+              <div className="empty-state"><span className="empty-icon">🎯</span><p>No fixtures found. Generate this stage first.</p></div>
             )}
-          </motion.div>
-        )}
-        {activeTab === "multi-event" && isMultiEvent && (
-          <motion.div key="me" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <MultiEventView stage={stage} participants={participants} />
           </motion.div>
         )}
         {activeTab === "heats" && isHeatsPlusFinal && (
           <motion.div key="ht" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <HeatsView stage={stage} />
+          </motion.div>
+        )}
+        {activeTab === "multi-event" && isMultiEvent && (
+          <motion.div key="me" className="tab-content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <MultiEventView stage={stage} participants={participants} />
           </motion.div>
         )}
         {activeTab === "leaderboard" && isLeaderboard && (
@@ -228,8 +191,8 @@ export function StageDetailPanel({
                   <input className="field-input" type="number" min="2" max="32" value={playoffCount}
                     onChange={(e) => setPlayoffCount(e.target.value)} style={{ maxWidth: "80px" }} />
                 </div>
-                <button className="btn-gold" onClick={handleGeneratePlayoff} disabled={generatingPlayoff} style={{ marginTop: "1.4rem" }}>
-                  {generatingPlayoff ? "Generating..." : "⚡ Generate Playoff"}
+                <button className="btn-gold" onClick={handleGeneratePlayoff} disabled={generatePlayoff.isPending} style={{ marginTop: "1.4rem" }}>
+                  {generatePlayoff.isPending ? "Generating..." : "⚡ Generate Playoff"}
                 </button>
               </div>
               {playoffError && <p className="form-error" style={{ marginTop: "0.75rem" }}>{playoffError}</p>}

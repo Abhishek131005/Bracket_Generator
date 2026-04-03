@@ -2,16 +2,20 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import { SportCard } from "../components/SportCard";
 import { VIEW_COLORS } from "../constants";
-import type { PrimaryView, SportDefinition } from "../types";
+import { useSports } from "../hooks/useQueries";
+import type { PrimaryView } from "../types";
 
-export function SportsPage({ sports }: { sports: SportDefinition[] }) {
+export function SportsPage() {
+  const { data: sports = [] } = useSports();
   const [activeView, setActiveView] = useState<PrimaryView | "ALL">("ALL");
   const [search, setSearch] = useState("");
+
   const filtered = useMemo(() => sports.filter((s) => {
     const matchView = activeView === "ALL" || s.primaryView === activeView;
     const matchSearch = !search || s.name.toLowerCase().includes(search.toLowerCase());
     return matchView && matchSearch;
   }), [sports, activeView, search]);
+
   const views: Array<PrimaryView | "ALL"> = ["ALL", "BRACKET", "HYBRID", "STANDINGS", "LEADERBOARD"];
 
   return (

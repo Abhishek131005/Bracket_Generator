@@ -1,7 +1,11 @@
 import { motion } from "framer-motion";
 import type { Page } from "../appTypes";
+import { useAppStore } from "../store";
 
-export function Nav({ page, setPage }: { page: Page; setPage: (p: Page) => void }) {
+export function Nav() {
+  const page = useAppStore((s) => s.page);
+  const setPage = useAppStore((s) => s.setPage);
+
   const links: { id: Page; label: string }[] = [
     { id: "home", label: "Dashboard" },
     { id: "create", label: "New Tournament" },

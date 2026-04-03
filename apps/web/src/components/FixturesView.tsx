@@ -1,66 +1,47 @@
 import { motion } from "framer-motion";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchStageFixtures, regenerateSwissRoundPairings, updateFixtureResult } from "../api";
-import type { StageFixture } from "../types";
+import { useMemo, useState } from "react";
+import { useFixtures } from "../hooks/useQueries";
+import { useUpdateFixture, useRegenerateSwissPairings } from "../hooks/useMutations";
 
 export function FixturesView({ stageId, isSwiss, onFixturesChanged }: {
   stageId: string;
   isSwiss?: boolean;
-  onFixturesChanged?: (fixtures: StageFixture[]) => void;
+  onFixturesChanged?: () => void;
 }) {
-  const [fixtures, setFixtures] = useState<StageFixture[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: fixtures = [], isLoading } = useFixtures(stageId);
+  const updateFixture = useUpdateFixture(stageId);
+  const regeneratePairings = useRegenerateSwissPairings(stageId);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [homeScore, setHomeScore] = useState("");
   const [awayScore, setAwayScore] = useState("");
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [rePairing, setRePairing] = useState<number | null>(null);
-
-  const loadFixtures = useCallback(() => {
-    setLoading(true);
-    fetchStageFixtures(stageId)
-      .then((data) => {
-        setFixtures(data);
-        onFixturesChanged?.(data);
-      })
-      .catch(() => setError("Could not load fixtures."))
-      .finally(() => setLoading(false));
-  }, [stageId]);
-
-  useEffect(() => { loadFixtures(); }, [loadFixtures]);
 
   const byRound = useMemo(() => {
-    const map = new Map<number, StageFixture[]>();
+    const map = new Map<number, typeof fixtures>();
     for (const f of fixtures) { if (!map.has(f.roundIndex)) map.set(f.roundIndex, []); map.get(f.roundIndex)!.push(f); }
     return Array.from(map.entries()).sort((a, b) => a[0] - b[0]);
   }, [fixtures]);
 
-  async function handleSave(fixtureId: string) {
+  function handleSave(fixtureId: string) {
     const hs = parseInt(homeScore); const as_ = parseInt(awayScore);
     if (isNaN(hs) || isNaN(as_) || hs < 0 || as_ < 0) { setError("Enter valid non-negative scores."); return; }
-    try {
-      setSaving(true); setError("");
-      await updateFixtureResult(fixtureId, hs, as_);
-      setEditingId(null);
-      const refreshed = await fetchStageFixtures(stageId);
-      setFixtures(refreshed);
-      onFixturesChanged?.(refreshed);
-    } catch (err) { setError(err instanceof Error ? err.message : "Could not save."); }
-    finally { setSaving(false); }
+    setError("");
+    updateFixture.mutate({ fixtureId, homeScore: hs, awayScore: as_ }, {
+      onSuccess: () => { setEditingId(null); onFixturesChanged?.(); },
+      onError: (err) => setError(err instanceof Error ? err.message : "Could not save."),
+    });
   }
 
-  async function handleSwissRePair(roundIndex: number) {
-    try {
-      setRePairing(roundIndex); setError("");
-      const newFixtures = await regenerateSwissRoundPairings(stageId, roundIndex);
-      setFixtures(newFixtures);
-      onFixturesChanged?.(newFixtures);
-    } catch (err) { setError(err instanceof Error ? err.message : "Could not generate pairings."); }
-    finally { setRePairing(null); }
+  function handleSwissRePair(roundIndex: number) {
+    setError("");
+    regeneratePairings.mutate(roundIndex, {
+      onSuccess: () => onFixturesChanged?.(),
+      onError: (err) => setError(err instanceof Error ? err.message : "Could not generate pairings."),
+    });
   }
 
-  if (loading) return <div className="empty-state"><span className="empty-icon">⏳</span><p>Loading fixtures...</p></div>;
+  if (isLoading) return <div className="empty-state"><span className="empty-icon">⏳</span><p>Loading fixtures...</p></div>;
   if (fixtures.length === 0) return <div className="empty-state"><span className="empty-icon">📋</span><p>No fixtures in this stage.</p></div>;
 
   return (
@@ -77,8 +58,8 @@ export function FixturesView({ stageId, isSwiss, onFixturesChanged }: {
               <h4 className="fixtures-round-title">Round {roundIdx}</h4>
               {isSwiss && isTBD && allPrevRoundsDone && (
                 <button className="btn-cyan" style={{ fontSize: "0.72rem", padding: "0.3rem 0.7rem" }}
-                  onClick={() => handleSwissRePair(roundIdx)} disabled={rePairing === roundIdx}>
-                  {rePairing === roundIdx ? "Pairing..." : "⚡ Generate Pairings"}
+                  onClick={() => handleSwissRePair(roundIdx)} disabled={regeneratePairings.isPending}>
+                  {regeneratePairings.isPending ? "Pairing..." : "⚡ Generate Pairings"}
                 </button>
               )}
             </div>
@@ -116,8 +97,8 @@ export function FixturesView({ stageId, isSwiss, onFixturesChanged }: {
                     <div className="fixture-actions">
                       {isEditing ? (
                         <>
-                          <button className="btn-save-score" onClick={() => handleSave(f.id)} disabled={saving}>
-                            {saving ? "..." : "✓ Save"}
+                          <button className="btn-save-score" onClick={() => handleSave(f.id)} disabled={updateFixture.isPending}>
+                            {updateFixture.isPending ? "..." : "✓ Save"}
                           </button>
                           <button className="btn-cancel-score" onClick={() => setEditingId(null)}>✕</button>
                         </>

@@ -1,18 +1,10 @@
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
-import { fetchStageStandings } from "../api";
-import type { StandingRow } from "../types";
+import { useStandings } from "../hooks/useQueries";
 
 export function StandingsView({ stageId }: { stageId: string }) {
-  const [standings, setStandings] = useState<StandingRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: standings = [], isLoading } = useStandings(stageId);
 
-  useEffect(() => {
-    setLoading(true);
-    fetchStageStandings(stageId).then(setStandings).finally(() => setLoading(false));
-  }, [stageId]);
-
-  if (loading) return <div className="empty-state"><span className="empty-icon">⏳</span><p>Calculating standings...</p></div>;
+  if (isLoading) return <div className="empty-state"><span className="empty-icon">⏳</span><p>Calculating standings...</p></div>;
   if (standings.length === 0) return <div className="empty-state"><span className="empty-icon">📊</span><p>No results yet. Enter match scores to see standings.</p></div>;
 
   return (

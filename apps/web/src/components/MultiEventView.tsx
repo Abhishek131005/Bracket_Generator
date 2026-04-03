@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { addPerformanceEntry, deletePerformanceEntry, fetchStagePerformances } from "../api";
-import type { MultiEventPointsStructure, PerformanceEntry, TournamentParticipant, TournamentStage } from "../types";
+import { type FormEvent, useMemo, useState } from "react";
+import { usePerformances } from "../hooks/useQueries";
+import { useAddPerformance, useDeletePerformance } from "../hooks/useMutations";
+import type { MultiEventPointsStructure, TournamentParticipant, TournamentStage } from "../types";
 
 export function MultiEventView({
   stage,
@@ -13,22 +14,18 @@ export function MultiEventView({
   const structure = stage.config as unknown as MultiEventPointsStructure | null;
   const events = structure?.events ?? [];
 
-  const [entries, setEntries] = useState<PerformanceEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: entries = [], isLoading } = usePerformances(stage.id);
+  const addPerformance = useAddPerformance(stage.id);
+  const deletePerformance = useDeletePerformance(stage.id);
+
   const [selectedParticipantId, setSelectedParticipantId] = useState("");
   const [selectedEventId, setSelectedEventId] = useState(events[0]?.id ?? "");
   const [pointsValue, setPointsValue] = useState("");
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    setLoading(true);
-    fetchStagePerformances(stage.id).then(setEntries).finally(() => setLoading(false));
-  }, [stage.id]);
-
-  // Build a lookup: participantId → { eventId → entry }
+  // Build lookup: participantId → { eventId → entry }
   const entryMap = useMemo(() => {
-    const map = new Map<string, Map<string, PerformanceEntry>>();
+    const map = new Map<string, Map<string, typeof entries[0]>>();
     for (const entry of entries) {
       if (!entry.fixtureId) continue;
       if (!map.has(entry.participantId)) map.set(entry.participantId, new Map());
@@ -45,12 +42,12 @@ export function MultiEventView({
         const total = eventMap
           ? Array.from(eventMap.values()).reduce((sum, e) => sum + e.metricValue, 0)
           : 0;
-        return { participant: p, total, eventMap: eventMap ?? new Map<string, PerformanceEntry>() };
+        return { participant: p, total, eventMap: eventMap ?? new Map() };
       })
       .sort((a, b) => b.total - a.total);
   }, [participants, entryMap]);
 
-  async function handleAdd(e: FormEvent) {
+  function handleAdd(e: FormEvent) {
     e.preventDefault();
     setError("");
     if (!selectedParticipantId || !selectedEventId || !pointsValue) {
@@ -59,25 +56,13 @@ export function MultiEventView({
     }
     const val = parseFloat(pointsValue);
     if (isNaN(val)) { setError("Enter a valid number."); return; }
-    try {
-      setSaving(true);
-      const entry = await addPerformanceEntry(stage.id, selectedParticipantId, val, "pts", selectedEventId);
-      setEntries((prev) => [...prev, entry]);
-      setPointsValue("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save entry.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDelete(entryId: string) {
-    try {
-      await deletePerformanceEntry(entryId);
-      setEntries((prev) => prev.filter((e) => e.id !== entryId));
-    } catch {
-      setError("Could not delete entry.");
-    }
+    addPerformance.mutate(
+      { participantId: selectedParticipantId, metricValue: val, unit: "pts", fixtureId: selectedEventId },
+      {
+        onSuccess: () => setPointsValue(""),
+        onError: (err) => setError(err instanceof Error ? err.message : "Could not save entry."),
+      }
+    );
   }
 
   if (!structure) {
@@ -97,7 +82,6 @@ export function MultiEventView({
         <span>{entries.length} scores recorded</span>
       </div>
 
-      {/* Entry form */}
       <form onSubmit={handleAdd} className="me-entry-form">
         <select className="field-select" value={selectedParticipantId}
           onChange={(e) => setSelectedParticipantId(e.target.value)}>
@@ -111,14 +95,13 @@ export function MultiEventView({
         </select>
         <input className="field-input me-pts-input" type="number" step="0.01"
           placeholder="Points" value={pointsValue} onChange={(e) => setPointsValue(e.target.value)} />
-        <button type="submit" className="btn-lime" disabled={saving}>
-          {saving ? "..." : "+ Add"}
+        <button type="submit" className="btn-lime" disabled={addPerformance.isPending}>
+          {addPerformance.isPending ? "..." : "+ Add"}
         </button>
       </form>
       {error && <p className="form-error">{error}</p>}
 
-      {/* Grid table */}
-      {loading ? (
+      {isLoading ? (
         <div className="empty-state"><span className="empty-icon">⏳</span><p>Loading...</p></div>
       ) : (
         <div className="me-grid-wrap">
@@ -144,7 +127,7 @@ export function MultiEventView({
                         {entry ? (
                           <span className="me-score-cell">
                             <strong>{entry.metricValue}</strong>
-                            <button className="me-del-btn" onClick={() => handleDelete(entry.id)} title="Remove">✕</button>
+                            <button className="me-del-btn" onClick={() => deletePerformance.mutate(entry.id)} title="Remove">✕</button>
                           </span>
                         ) : (
                           <span className="me-score-empty">—</span>
