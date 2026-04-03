@@ -1,4 +1,5 @@
 import { sportsCatalog } from "../data/sports.js";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { buildSingleEliminationBracket } from "../engine/singleElimination.js";
 import { buildRoundRobinFixtures } from "../engine/roundRobin.js";
@@ -70,6 +71,10 @@ export interface PerformanceEntryRecord {
   rank: number | null;
   metadata: string | null;
   createdAt: string;
+}
+
+function serializeMetadata(value: string | null): string | null {
+  return value;
 }
 
 // ── Mappers ──────────────────────────────────────────────────────────────────
@@ -414,13 +419,19 @@ export async function generateDoubleEliminationStage(input: GenerateStageInput):
   };
 
   // Flatten all rounds from the bracket and persist
-  const allMatches = bracket.allRounds.flatMap((round) =>
+  const allMatches: Prisma.FixtureCreateManyInput[] = bracket.allRounds.flatMap((round) =>
     round.matches.map((match) => {
       const leftP = match.leftLabel ? participantByName.get(match.leftLabel) : undefined;
       const rightP = match.rightLabel ? participantByName.get(match.rightLabel) : undefined;
       const autoP = match.autoAdvanceWinner
         ? participantByName.get(match.autoAdvanceWinner)
         : undefined;
+      const status =
+        match.status === "AUTO_ADVANCE"
+          ? "AUTO_ADVANCE"
+          : match.status === "PENDING"
+          ? "PENDING"
+          : "SCHEDULED";
 
       return {
         stageId: stage.id,
@@ -434,7 +445,7 @@ export async function generateDoubleEliminationStage(input: GenerateStageInput):
         rightLabel: match.rightLabel,
         winnerGoesTo: match.winnerGoesTo,
         loserGoesTo: match.loserGoesTo,
-        status: match.status as string,
+        status,
         autoAdvanceParticipantId: autoP?.id ?? null,
       };
     })
@@ -485,7 +496,7 @@ export async function generateSwissStage(input: GenerateStageInput): Promise<{
     },
   });
 
-  const allMatches = schedule.rounds.flatMap((round) =>
+  const allMatches: Prisma.FixtureCreateManyInput[] = schedule.rounds.flatMap((round) =>
     round.matches.map((match) => ({
       stageId: stage.id,
       roundIndex: match.roundIndex,
@@ -1301,7 +1312,7 @@ export async function addPerformanceEntry(
     metricValue: entry.metricValue,
     unit: entry.unit,
     rank: entry.rank,
-    metadata: entry.metadata,
+    metadata: serializeMetadata(entry.metadata),
     createdAt: entry.createdAt.toISOString(),
   };
 }
@@ -1321,7 +1332,7 @@ export async function listPerformanceEntries(stageId: string): Promise<Performan
     metricValue: e.metricValue,
     unit: e.unit,
     rank: e.rank,
-    metadata: e.metadata,
+    metadata: serializeMetadata(e.metadata),
     createdAt: e.createdAt.toISOString(),
   }));
 }

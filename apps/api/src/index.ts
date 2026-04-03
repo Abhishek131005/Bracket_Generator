@@ -97,6 +97,32 @@ function sendValidationError(response: Response, issues: z.ZodIssue[]): void {
   });
 }
 
+function formatOperationMessage(error: unknown, fallback: string): string {
+  const rawMessage = error instanceof Error ? error.message : "";
+
+  if (rawMessage.includes("Unknown argument `code`")) {
+    return "Stage generation failed because the backend schema is out of sync. Run npm run prisma:generate -w apps/api and npm run db:push -w apps/api, then restart npm run dev.";
+  }
+
+  if (rawMessage.includes("Unique constraint failed on the fields: (`stageId`,`roundIndex`,`matchIndex`)")) {
+    return "Stage generation failed because duplicate fixture slots were detected. Delete the partially generated stage and try again.";
+  }
+
+  if (rawMessage.includes("listen EADDRINUSE")) {
+    return "Port 4000 is already in use. Stop the existing backend process and restart npm run dev.";
+  }
+
+  if (rawMessage.startsWith("Invalid `prisma.")) {
+    return `${fallback} Database schema and generated client may be out of sync. Run npm run prisma:generate -w apps/api and npm run db:push -w apps/api, then restart npm run dev.`;
+  }
+
+  return rawMessage || fallback;
+}
+
+function sendOperationError(response: Response, error: unknown, fallback: string): void {
+  response.status(400).json({ message: formatOperationMessage(error, fallback) });
+}
+
 app.get("/", (_request, response) => {
   response.status(200).json({
     name: "Zemo Tournament Engine API",
@@ -127,17 +153,25 @@ app.get("/api/formats", (_request, response) => {
 // ── Tournaments ──────────────────────────────────────────────────────────────
 
 app.get("/api/tournaments", async (_request, response) => {
-  const tournaments = await listTournaments();
-  response.status(200).json({ data: tournaments });
+  try {
+    const tournaments = await listTournaments();
+    response.status(200).json({ data: tournaments });
+  } catch (error) {
+    sendOperationError(response, error, "Could not fetch tournaments.");
+  }
 });
 
 app.get("/api/tournaments/:id", async (request, response) => {
-  const tournament = await getTournamentById(request.params.id);
-  if (!tournament) {
-    response.status(404).json({ message: "Tournament not found." });
-    return;
+  try {
+    const tournament = await getTournamentById(request.params.id);
+    if (!tournament) {
+      response.status(404).json({ message: "Tournament not found." });
+      return;
+    }
+    response.status(200).json({ data: tournament });
+  } catch (error) {
+    sendOperationError(response, error, "Could not fetch tournament.");
   }
-  response.status(200).json({ data: tournament });
 });
 
 const createTournamentSchema = z.object({
@@ -155,7 +189,7 @@ app.post("/api/tournaments", async (request, response) => {
     const tournament = await createTournament(parsedBody.data);
     response.status(201).json({ data: tournament });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not create tournament." });
+    sendOperationError(response, error, "Could not create tournament.");
   }
 });
 
@@ -170,7 +204,7 @@ app.get("/api/tournaments/:id/participants", async (request, response) => {
     const participants = await listParticipants(request.params.id);
     response.status(200).json({ data: participants });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not fetch participants." });
+    sendOperationError(response, error, "Could not fetch participants.");
   }
 });
 
@@ -187,7 +221,7 @@ app.post("/api/tournaments/:id/participants", async (request, response) => {
     });
     response.status(200).json({ data: participants, count: participants.length });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not add participants." });
+    sendOperationError(response, error, "Could not add participants.");
   }
 });
 
@@ -198,7 +232,7 @@ app.get("/api/tournaments/:id/stages", async (request, response) => {
     const stages = await listStages(request.params.id);
     response.status(200).json({ data: stages, count: stages.length });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not fetch stages." });
+    sendOperationError(response, error, "Could not fetch stages.");
   }
 });
 
@@ -220,7 +254,7 @@ app.post("/api/tournaments/:id/stages/single-elimination", async (request, respo
     });
     response.status(201).json({ data: stageData });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not generate stage." });
+    sendOperationError(response, error, "Could not generate stage.");
   }
 });
 
@@ -237,7 +271,7 @@ app.post("/api/tournaments/:id/stages/round-robin", async (request, response) =>
     });
     response.status(201).json({ data: stageData });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not generate round-robin stage." });
+    sendOperationError(response, error, "Could not generate round-robin stage.");
   }
 });
 
@@ -254,7 +288,7 @@ app.post("/api/tournaments/:id/stages/double-elimination", async (request, respo
     });
     response.status(201).json({ data: stageData });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not generate double-elimination stage." });
+    sendOperationError(response, error, "Could not generate double-elimination stage.");
   }
 });
 
@@ -272,7 +306,7 @@ app.post("/api/tournaments/:id/stages/swiss", async (request, response) => {
     });
     response.status(201).json({ data: stageData });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not generate Swiss stage." });
+    sendOperationError(response, error, "Could not generate Swiss stage.");
   }
 });
 
@@ -289,7 +323,7 @@ app.post("/api/tournaments/:id/stages/league-plus-playoff", async (request, resp
     });
     response.status(201).json({ data: stageData });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not generate league stage." });
+    sendOperationError(response, error, "Could not generate league stage.");
   }
 });
 
@@ -314,7 +348,7 @@ app.post("/api/tournaments/:id/stages/playoff", async (request, response) => {
     );
     response.status(201).json({ data: stageData });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not generate playoff stage." });
+    sendOperationError(response, error, "Could not generate playoff stage.");
   }
 });
 
@@ -337,7 +371,7 @@ app.post("/api/stages/:stageId/swiss/pair-round", async (request, response) => {
     );
     response.status(200).json({ data: fixtures });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not generate pairings." });
+    sendOperationError(response, error, "Could not generate pairings.");
   }
 });
 
@@ -348,7 +382,7 @@ app.get("/api/stages/:stageId/fixtures", async (request, response) => {
     const fixtures = await listFixturesByStage(request.params.stageId);
     response.status(200).json({ data: fixtures });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not fetch fixtures." });
+    sendOperationError(response, error, "Could not fetch fixtures.");
   }
 });
 
@@ -371,7 +405,7 @@ app.patch("/api/fixtures/:fixtureId/result", async (request, response) => {
     });
     response.status(200).json({ data: fixture });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not update fixture result." });
+    sendOperationError(response, error, "Could not update fixture result.");
   }
 });
 
@@ -382,7 +416,7 @@ app.get("/api/stages/:stageId/standings", async (request, response) => {
     const standings = await getStandingsByStage(request.params.stageId);
     response.status(200).json({ data: standings });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not calculate standings." });
+    sendOperationError(response, error, "Could not calculate standings.");
   }
 });
 
@@ -400,7 +434,7 @@ app.get("/api/stages/:stageId/performances", async (request, response) => {
     const entries = await listPerformanceEntries(request.params.stageId);
     response.status(200).json({ data: entries });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not fetch performances." });
+    sendOperationError(response, error, "Could not fetch performances.");
   }
 });
 
@@ -417,7 +451,7 @@ app.post("/api/stages/:stageId/performances", async (request, response) => {
     });
     response.status(201).json({ data: entry });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not add performance entry." });
+    sendOperationError(response, error, "Could not add performance entry.");
   }
 });
 
@@ -426,7 +460,7 @@ app.delete("/api/performances/:entryId", async (request, response) => {
     await deletePerformanceEntry(request.params.entryId);
     response.status(200).json({ message: "Deleted." });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not delete entry." });
+    sendOperationError(response, error, "Could not delete entry.");
   }
 });
 
@@ -449,7 +483,7 @@ app.post("/api/brackets/single-elimination", (request, response) => {
     const bracket = buildSingleEliminationBracket(parsedBody.data.participants);
     response.status(200).json({ data: bracket });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not build bracket." });
+    sendOperationError(response, error, "Could not build bracket.");
   }
 });
 
@@ -463,7 +497,7 @@ app.post("/api/brackets/double-elimination", (request, response) => {
     const bracket = buildDoubleEliminationBracket(parsedBody.data.participants);
     response.status(200).json({ data: bracket });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not build bracket." });
+    sendOperationError(response, error, "Could not build bracket.");
   }
 });
 
@@ -479,7 +513,7 @@ app.post("/api/brackets/round-robin", (request, response) => {
     );
     response.status(200).json({ data: schedule });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not build schedule." });
+    sendOperationError(response, error, "Could not build schedule.");
   }
 });
 
@@ -503,7 +537,7 @@ app.post("/api/brackets/swiss", (request, response) => {
     );
     response.status(200).json({ data: schedule });
   } catch (error) {
-    response.status(400).json({ message: error instanceof Error ? error.message : "Could not build Swiss schedule." });
+    sendOperationError(response, error, "Could not build Swiss schedule.");
   }
 });
 

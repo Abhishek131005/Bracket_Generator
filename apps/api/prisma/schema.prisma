@@ -9,122 +9,59 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─── Enums ────────────────────────────────────────────────────────────────────
-
-enum TournamentStatus {
-  DRAFT
-  PUBLISHED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-}
-
-enum StageStatus {
-  DRAFT
-  PUBLISHED
-  IN_PROGRESS
-  COMPLETED
-}
-
-enum FixtureStatus {
-  SCHEDULED
-  PENDING
-  IN_PROGRESS
-  AUTO_ADVANCE
-  COMPLETED
-  CANCELLED
-}
-
-enum ParticipantType {
-  INDIVIDUAL
-  TEAM
-}
-
-enum BracketType {
-  WINNERS
-  LOSERS
-  GRAND_FINAL
-}
-
-enum CompetitionFormat {
-  SINGLE_ELIMINATION
-  DOUBLE_ELIMINATION
-  ROUND_ROBIN
-  SWISS
-  LEAGUE_PLUS_PLAYOFF
-  HEATS_PLUS_FINAL
-  DIRECT_FINAL
-  MULTI_EVENT_POINTS
-  JUDGED_LEADERBOARD
-  CUSTOM
-}
-
-enum RankingRule {
-  HEAD_TO_HEAD_SCORE
-  POINTS_TABLE
-  TIME_ASC
-  DISTANCE_DESC
-  HEIGHT_DESC_WITH_COUNTBACK
-  JUDGES_SCORE_DESC
-  AGGREGATE_POINTS_DESC
-}
-
-// ─── Models ───────────────────────────────────────────────────────────────────
-
 model Tournament {
-  id                String            @id @default(cuid())
-  name              String
-  sportId           Int
-  sportName         String
-  format            CompetitionFormat
-  rankingRule       RankingRule
-  status            TournamentStatus  @default(DRAFT)
-  description       String?
-  maxParticipants   Int?
-  scheduledStartAt  DateTime?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  id               String   @id @default(cuid())
+  name             String
+  sportId          Int
+  sportName        String
+  format           String
+  rankingRule      String
+  status           String   @default("DRAFT")
+  description      String?
+  maxParticipants  Int?
+  scheduledStartAt DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  participants      Participant[]
-  stages            Stage[]
+  participants Participant[]
+  stages       Stage[]
 
   @@index([status])
   @@index([sportId])
 }
 
 model Participant {
-  id            String          @id @default(cuid())
-  tournamentId  String
-  tournament    Tournament      @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  name          String
-  seed          Int?
-  type          ParticipantType @default(TEAM)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  name         String
+  seed         Int?
+  type         String     @default("TEAM")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  fixturesAsLeft        Fixture[]          @relation("FixtureLeft")
-  fixturesAsRight       Fixture[]          @relation("FixtureRight")
-  autoAdvancedFixtures  Fixture[]          @relation("FixtureAutoAdvance")
-  performanceEntries    PerformanceEntry[]
+  fixturesAsLeft       Fixture[]          @relation("FixtureLeft")
+  fixturesAsRight      Fixture[]          @relation("FixtureRight")
+  autoAdvancedFixtures Fixture[]          @relation("FixtureAutoAdvance")
+  performanceEntries   PerformanceEntry[]
 
   @@unique([tournamentId, name])
-  @@unique([tournamentId, seed])     // FIX: prevent duplicate seeds
+  @@unique([tournamentId, seed])
   @@index([tournamentId])
 }
 
 model Stage {
-  id            String            @id @default(cuid())
-  tournamentId  String
-  tournament    Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  name          String
-  sequence      Int
-  format        CompetitionFormat
-  rankingRule   RankingRule
-  status        StageStatus       @default(DRAFT)
-  // Stores format-specific config: { totalRounds, playoffTeamCount, heatSize, qualifyingCount }
-  config        Json?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  name         String
+  sequence     Int
+  format       String
+  rankingRule  String
+  status       String     @default("DRAFT")
+  config       String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   fixtures           Fixture[]
   performanceEntries PerformanceEntry[]
@@ -134,46 +71,41 @@ model Stage {
 }
 
 model Fixture {
-  id                       String         @id @default(cuid())
+  id                       String       @id @default(cuid())
   stageId                  String
-  stage                    Stage          @relation(fields: [stageId], references: [id], onDelete: Cascade)
-  // DE stable lookup key e.g. "WR1M1", "LR2M3", "GF1M1"
+  stage                    Stage        @relation(fields: [stageId], references: [id], onDelete: Cascade)
   code                     String?
-  bracket                  BracketType?
+  bracket                  String?
   roundIndex               Int
   matchIndex               Int
   leftParticipantId        String?
   rightParticipantId       String?
-  leftParticipant          Participant?   @relation("FixtureLeft",       fields: [leftParticipantId],  references: [id], onDelete: SetNull)
-  rightParticipant         Participant?   @relation("FixtureRight",      fields: [rightParticipantId], references: [id], onDelete: SetNull)
+  leftParticipant          Participant? @relation("FixtureLeft", fields: [leftParticipantId], references: [id], onDelete: SetNull)
+  rightParticipant         Participant? @relation("FixtureRight", fields: [rightParticipantId], references: [id], onDelete: SetNull)
   leftLabel                String?
   rightLabel               String?
-  // DE bracket routing codes
   winnerGoesTo             String?
   loserGoesTo              String?
-  // FIX: Float for decimal sports (swim times, jump distances, gymnastics scores)
   leftScore                Float?
   rightScore               Float?
-  status                   FixtureStatus  @default(SCHEDULED)
+  status                   String       @default("SCHEDULED")
   autoAdvanceParticipantId String?
-  autoAdvanceParticipant   Participant?   @relation("FixtureAutoAdvance", fields: [autoAdvanceParticipantId], references: [id], onDelete: SetNull)
-  createdAt                DateTime       @default(now())
-  updatedAt                DateTime       @updatedAt
+  autoAdvanceParticipant   Participant? @relation("FixtureAutoAdvance", fields: [autoAdvanceParticipantId], references: [id], onDelete: SetNull)
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
 
-  performanceEntries       PerformanceEntry[]
+  performanceEntries PerformanceEntry[]
 
   @@unique([stageId, roundIndex, matchIndex])
-  @@unique([stageId, code])              // FIX: enforce DE code uniqueness at DB level
+  @@unique([stageId, code])
   @@index([stageId, roundIndex])
-  @@index([stageId, status])             // FIX: for recalculate queries
+  @@index([stageId, status])
 }
 
 model PerformanceEntry {
   id            String      @id @default(cuid())
   stageId       String
   stage         Stage       @relation(fields: [stageId], references: [id], onDelete: Cascade)
-  // FIX: nullable — performance entries can exist at stage level (e.g. MULTI_EVENT_POINTS)
-  // but for HEATS_PLUS_FINAL they must link to the specific heat fixture
   fixtureId     String?
   fixture       Fixture?    @relation(fields: [fixtureId], references: [id], onDelete: SetNull)
   participantId String
@@ -181,12 +113,11 @@ model PerformanceEntry {
   metricValue   Float
   unit          String?
   rank          Int?
-  // FIX: Json instead of String — no more JSON.parse() in application code
-  metadata      Json?
+  metadata      String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  @@index([stageId, participantId])      // FIX: leaderboard filter pattern
-  @@index([stageId, metricValue])        // existing — keep for sort
+  @@index([stageId, participantId])
+  @@index([stageId, metricValue])
   @@index([fixtureId])
 }
