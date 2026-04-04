@@ -1,5 +1,7 @@
+import { createServer } from "node:http";
 import cors from "cors";
 import express, { type Response } from "express";
+import { Server as SocketIOServer } from "socket.io";
 import { z } from "zod";
 import { sportsCatalog } from "./data/sports.js";
 import { buildSingleEliminationBracket } from "./engine/singleElimination.js";
@@ -17,6 +19,7 @@ import {
   generateLeaguePlusPlayoffStage,
   generateHeatsPlusFinalStage,
   generateMultiEventPointsStage,
+  generateLeaderboardStage,
   generatePlayoffStage,
   regenerateSwissRoundPairings,
   getTournamentById,
@@ -32,10 +35,23 @@ import {
 } from "./repositories/tournaments.js";
 
 const app = express();
+const httpServer = createServer(app);
+const io = new SocketIOServer(httpServer, {
+  cors: { origin: "*" },
+});
 const port = Number(process.env.PORT ?? 4000);
 
 app.use(cors());
 app.use(express.json());
+
+io.on("connection", (socket) => {
+  socket.on("join:stage", (stageId: string) => {
+    socket.join(`stage:${stageId}`);
+  });
+  socket.on("leave:stage", (stageId: string) => {
+    socket.leave(`stage:${stageId}`);
+  });
+});
 
 function formatIssuePath(path: (string | number)[]): string {
   if (path.length === 0) {
@@ -375,6 +391,42 @@ app.post("/api/tournaments/:id/stages/multi-event-points", async (request, respo
   }
 });
 
+app.post("/api/tournaments/:id/stages/direct-final", async (request, response) => {
+  const parsedBody = stageNameSchema.safeParse(request.body ?? {});
+  if (!parsedBody.success) {
+    sendValidationError(response, parsedBody.error.issues);
+    return;
+  }
+  try {
+    const stageData = await generateLeaderboardStage({
+      tournamentId: request.params.id,
+      stageName: parsedBody.data.stageName,
+      format: "DIRECT_FINAL",
+    });
+    response.status(201).json({ data: stageData });
+  } catch (error) {
+    sendOperationError(response, error, "Could not generate direct final stage.");
+  }
+});
+
+app.post("/api/tournaments/:id/stages/judged-leaderboard", async (request, response) => {
+  const parsedBody = stageNameSchema.safeParse(request.body ?? {});
+  if (!parsedBody.success) {
+    sendValidationError(response, parsedBody.error.issues);
+    return;
+  }
+  try {
+    const stageData = await generateLeaderboardStage({
+      tournamentId: request.params.id,
+      stageName: parsedBody.data.stageName,
+      format: "JUDGED_LEADERBOARD",
+    });
+    response.status(201).json({ data: stageData });
+  } catch (error) {
+    sendOperationError(response, error, "Could not generate judged leaderboard stage.");
+  }
+});
+
 const playoffSchema = z.object({
   leagueStageId: z.string().min(1),
   playoffTeamCount: z.number().int().min(2).max(32).default(4),
@@ -451,6 +503,7 @@ app.patch("/api/fixtures/:fixtureId/result", async (request, response) => {
       homeScore: parsedBody.data.homeScore,
       awayScore: parsedBody.data.awayScore,
     });
+    io.to(`stage:${fixture.stageId}`).emit("fixture:updated", { stageId: fixture.stageId });
     response.status(200).json({ data: fixture });
   } catch (error) {
     sendOperationError(response, error, "Could not update fixture result.");
@@ -498,6 +551,7 @@ app.post("/api/stages/:stageId/performances", async (request, response) => {
       stageId: request.params.stageId,
       ...parsedBody.data,
     });
+    io.to(`stage:${request.params.stageId}`).emit("performance:updated", { stageId: request.params.stageId });
     response.status(201).json({ data: entry });
   } catch (error) {
     sendOperationError(response, error, "Could not add performance entry.");
@@ -506,7 +560,8 @@ app.post("/api/stages/:stageId/performances", async (request, response) => {
 
 app.delete("/api/performances/:entryId", async (request, response) => {
   try {
-    await deletePerformanceEntry(request.params.entryId);
+    const { stageId } = await deletePerformanceEntry(request.params.entryId);
+    io.to(`stage:${stageId}`).emit("performance:updated", { stageId });
     response.status(200).json({ message: "Deleted." });
   } catch (error) {
     sendOperationError(response, error, "Could not delete entry.");
@@ -590,6 +645,6 @@ app.post("/api/brackets/swiss", (request, response) => {
   }
 });
 
-app.listen(port, () => {
+httpServer.listen(port, () => {
   console.log(`Zemo API listening on port ${port}`);
 });

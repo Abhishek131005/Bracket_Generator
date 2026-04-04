@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useStandings } from "../hooks/useQueries";
 
 export function StandingsView({ stageId }: { stageId: string }) {
@@ -9,31 +9,38 @@ export function StandingsView({ stageId }: { stageId: string }) {
 
   return (
     <div className="standings-view">
-      <div className="standings-table-wrap">
-        <table className="standings-table">
-          <thead>
-            <tr><th>#</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th></tr>
-          </thead>
-          <tbody>
-            {standings.map((row, i) => (
-              <motion.tr key={row.participantId} className={`standing-row ${i < 3 ? "standing-top" : ""}`}
-                initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}>
-                <td><span className={`rank-badge rank-${Math.min(row.rank, 4)}`}>{row.rank}</span></td>
-                <td className="team-name-cell">{row.participantName}</td>
-                <td>{row.played}</td>
-                <td className="stat-win">{row.won}</td>
-                <td>{row.drawn}</td>
-                <td className="stat-loss">{row.lost}</td>
-                <td>{row.goalsFor}</td>
-                <td>{row.goalsAgainst}</td>
-                <td className={row.goalDifference >= 0 ? "stat-positive" : "stat-negative"}>
-                  {row.goalDifference > 0 ? "+" : ""}{row.goalDifference}
-                </td>
-                <td className="stat-points">{row.points}</td>
-              </motion.tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="standings-grid-wrap">
+        <div className="standings-grid-header">
+          <span>#</span><span>Team</span>
+          <span>P</span><span>W</span><span>D</span><span>L</span>
+          <span>GF</span><span>GA</span><span>GD</span><span>Pts</span>
+        </div>
+        <AnimatePresence mode="popLayout">
+          {standings.map((row, i) => (
+            <motion.div
+              key={row.participantId}
+              className={`standings-grid-row ${i < 3 ? "standing-top" : ""}`}
+              layout
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ layout: { duration: 0.35, ease: "easeOut" }, duration: 0.2 }}
+            >
+              <span><span className={`rank-badge rank-${Math.min(row.rank, 4)}`}>{row.rank}</span></span>
+              <span className="team-name-cell">{row.participantName}</span>
+              <span>{row.played}</span>
+              <span className="stat-win">{row.won}</span>
+              <span>{row.drawn}</span>
+              <span className="stat-loss">{row.lost}</span>
+              <span>{row.goalsFor}</span>
+              <span>{row.goalsAgainst}</span>
+              <span className={row.goalDifference >= 0 ? "stat-positive" : "stat-negative"}>
+                {row.goalDifference > 0 ? "+" : ""}{row.goalDifference}
+              </span>
+              <span className="stat-points">{row.points}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
       <p className="standings-legend">3 pts for win · 1 pt for draw · 0 for loss</p>
     </div>

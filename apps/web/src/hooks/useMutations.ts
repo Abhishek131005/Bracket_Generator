@@ -7,6 +7,7 @@ import type {
   GeneratedLeaguePlusPlayoffStage,
   GeneratedHeatsPlusFinalStage,
   GeneratedMultiEventPointsStage,
+  TournamentStage,
 } from "../types";
 import {
   createTournament,
@@ -18,6 +19,8 @@ import {
   generateLeaguePlusPlayoffStageForTournament,
   generateHeatsPlusFinalStageForTournament,
   generateMultiEventPointsStageForTournament,
+  generateDirectFinalStageForTournament,
+  generateJudgedLeaderboardStageForTournament,
   generatePlayoffStage,
   updateFixtureResult,
   regenerateSwissRoundPairings,
@@ -32,7 +35,8 @@ type AnyGeneratedStage =
   | GeneratedSwissStage
   | GeneratedLeaguePlusPlayoffStage
   | GeneratedHeatsPlusFinalStage
-  | GeneratedMultiEventPointsStage;
+  | GeneratedMultiEventPointsStage
+  | { stage: TournamentStage };
 import { queryKeys } from "./useQueries";
 
 // ── Create Tournament ─────────────────────────────────────────────────────────
@@ -64,7 +68,9 @@ type GenerateStagePayload =
   | { format: "swiss"; stageName?: string; totalRounds?: number }
   | { format: "league-plus-playoff"; stageName?: string }
   | { format: "heats-plus-final"; stageName?: string; participantsPerHeat?: number }
-  | { format: "multi-event-points"; stageName?: string; eventNames?: string[] };
+  | { format: "multi-event-points"; stageName?: string; eventNames?: string[] }
+  | { format: "direct-final"; stageName?: string }
+  | { format: "judged-leaderboard"; stageName?: string };
 
 export function useGenerateStage(tournamentId: string) {
   const qc = useQueryClient();
@@ -85,6 +91,10 @@ export function useGenerateStage(tournamentId: string) {
         return generateHeatsPlusFinalStageForTournament(tournamentId, stageName, (payload as any).participantsPerHeat);
       if (format === "multi-event-points")
         return generateMultiEventPointsStageForTournament(tournamentId, stageName, (payload as any).eventNames);
+      if (format === "direct-final")
+        return generateDirectFinalStageForTournament(tournamentId, stageName);
+      if (format === "judged-leaderboard")
+        return generateJudgedLeaderboardStageForTournament(tournamentId, stageName);
       throw new Error(`Unknown format: ${format}`);
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.stages(tournamentId) }); },
@@ -151,12 +161,14 @@ export function useAddPerformance(stageId: string) {
       metricValue,
       unit,
       fixtureId,
+      metadata,
     }: {
       participantId: string;
       metricValue: number;
       unit?: string;
       fixtureId?: string;
-    }) => addPerformanceEntry(stageId, participantId, metricValue, unit, fixtureId),
+      metadata?: string;
+    }) => addPerformanceEntry(stageId, participantId, metricValue, unit, fixtureId, metadata),
     onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.performances(stageId) }); },
   });
 }

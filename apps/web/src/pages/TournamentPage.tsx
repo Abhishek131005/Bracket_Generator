@@ -14,7 +14,9 @@ type GenerateFormat =
   | "swiss"
   | "league-plus-playoff"
   | "heats-plus-final"
-  | "multi-event-points";
+  | "multi-event-points"
+  | "direct-final"
+  | "judged-leaderboard";
 
 const GENERATE_FORMATS: { id: GenerateFormat; label: string }[] = [
   { id: "single-elimination", label: "Single Elim" },
@@ -24,6 +26,8 @@ const GENERATE_FORMATS: { id: GenerateFormat; label: string }[] = [
   { id: "league-plus-playoff", label: "League + PO" },
   { id: "heats-plus-final", label: "Heats + Final" },
   { id: "multi-event-points", label: "Multi-Event" },
+  { id: "direct-final", label: "Direct Final" },
+  { id: "judged-leaderboard", label: "Judged Event" },
 ];
 
 export function TournamentPage() {

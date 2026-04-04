@@ -1026,6 +1026,167 @@ body::after {
   min-width: fit-content;
 }
 
+/* ─── Bracket Champion Banner ────────────────────────────────────────────────── */
+.bracket-champion-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1.25rem;
+  background: linear-gradient(135deg, rgba(244,211,94,0.14), rgba(244,211,94,0.04));
+  border: 1px solid rgba(244,211,94,0.38);
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+}
+
+.bracket-champion-trophy {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.bracket-champion-name {
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 1.35rem;
+  letter-spacing: 0.06em;
+  color: var(--accent-gold);
+}
+
+.bracket-champion-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(244,211,94,0.55);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* ─── Bracket Score Modal ────────────────────────────────────────────────────── */
+.bsm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 200;
+  backdrop-filter: blur(4px);
+}
+
+.bsm-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 201;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem;
+  width: min(420px, 90vw);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.bsm-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.bsm-title {
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 1.2rem;
+  letter-spacing: 0.06em;
+  color: var(--accent-gold);
+}
+
+.bsm-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.3rem 0.5rem;
+  line-height: 1;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.bsm-close:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.bsm-teams {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+
+.bsm-team-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s;
+}
+
+.bsm-team-row:focus-within {
+  border-color: rgba(199, 244, 100, 0.3);
+}
+
+.bsm-team-name {
+  font-weight: 600;
+  font-size: 0.94rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bsm-score-input {
+  width: 66px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font-family: "Space Mono", monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 0.4rem 0.5rem;
+  outline: none;
+  transition: border-color 0.15s;
+  -moz-appearance: textfield;
+}
+
+.bsm-score-input::-webkit-outer-spin-button,
+.bsm-score-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+
+.bsm-score-input:focus {
+  border-color: rgba(199, 244, 100, 0.55);
+}
+
+.bsm-sep {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 0.1rem 0;
+}
+
+.bsm-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
 /* ─── Sports Page ─────────────────────────────────────────────────────────────── */
 .sports-controls {
   display: flex;
@@ -1611,25 +1772,29 @@ body::after {
   padding: 1.25rem;
 }
 
-.standings-table-wrap {
+.standings-grid-wrap {
   overflow-x: auto;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-}
-
-.standings-table {
-  width: 100%;
-  border-collapse: collapse;
   font-size: 0.85rem;
 }
 
-.standings-table thead tr {
-  background: rgba(255,255,255,0.04);
-  border-bottom: 1px solid var(--border);
+/* 10-column grid: # | Team | P W D L GF GA GD Pts */
+.standings-grid-header,
+.standings-grid-row {
+  display: grid;
+  grid-template-columns: 42px 1fr repeat(8, 44px);
+  align-items: center;
 }
 
-.standings-table th {
-  padding: 0.6rem 0.75rem;
+.standings-grid-header {
+  background: rgba(255,255,255,0.04);
+  border-bottom: 1px solid var(--border);
+  padding: 0 0.25rem;
+}
+
+.standings-grid-header > span {
+  padding: 0.6rem 0.5rem;
   text-align: center;
   font-size: 0.7rem;
   font-weight: 700;
@@ -1639,17 +1804,20 @@ body::after {
   white-space: nowrap;
 }
 
-.standings-table th:nth-child(2) { text-align: left; }
+.standings-grid-header > span:nth-child(2) { text-align: left; }
 
-.standings-table td {
-  padding: 0.6rem 0.75rem;
-  text-align: center;
+.standings-grid-row {
   border-bottom: 1px solid rgba(255,255,255,0.04);
-  color: var(--text-dim);
-  font-size: 0.84rem;
+  padding: 0 0.25rem;
 }
 
-.standings-table tbody tr:last-child td { border-bottom: none; }
+.standings-grid-row > span {
+  padding: 0.6rem 0.5rem;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.standings-grid-row:last-child { border-bottom: none; }
 
 .team-name-cell {
   text-align: left !important;
@@ -1780,6 +1948,223 @@ body::after {
 }
 
 .lb-delete-btn:hover { color: var(--accent-coral); background: rgba(255,107,53,0.1); }
+
+/* ─── Height Leaderboard ─────────────────────────────────────────────────────── */
+.height-entry-form {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.height-form-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.height-main-input {
+  flex: 1;
+  min-width: 110px;
+}
+
+.height-countback-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.height-cb-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.height-cb-name {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.height-cb-input {
+  width: 72px;
+}
+
+.height-form-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.height-lb-header {
+  display: grid;
+  grid-template-columns: 44px 1fr 80px 160px 36px;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.height-lb-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 80px 160px 36px;
+  gap: 0.5rem;
+  align-items: center;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem;
+  transition: border-color 0.15s;
+}
+
+.height-lb-row:hover { border-color: var(--border-hover); }
+
+.height-cleared {
+  font-family: "Space Mono", monospace;
+  font-size: 0.95rem;
+  color: var(--accent-gold);
+}
+
+.height-cb-cols {
+  font-size: 0.66rem;
+}
+
+.height-countback-cells {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: "Space Mono", monospace;
+  font-size: 0.78rem;
+}
+
+.height-cb-val {
+  color: var(--text-dim);
+  min-width: 18px;
+  text-align: center;
+}
+
+.height-cb-sep {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+/* ─── Judged Leaderboard ─────────────────────────────────────────────────────── */
+.judged-entry-form {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.judged-form-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.judged-judge-input { flex: 1; min-width: 130px; }
+.judged-score-input { width: 90px; }
+
+.judged-lb-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.judged-lb-header,
+.judged-lb-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 1fr 100px 16px;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+}
+
+.judged-lb-header {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.judged-lb-row {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s;
+}
+
+.judged-lb-row:hover { border-color: var(--border-hover); }
+
+.jlb-scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.judge-score-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem 0.15rem 0.6rem;
+  font-family: "Space Mono", monospace;
+  font-size: 0.76rem;
+}
+
+.judge-score-val {
+  color: var(--text-dim);
+}
+
+.judge-score-del {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.12s;
+}
+
+.judge-score-del:hover { color: var(--accent-coral); }
+
+.judged-no-scores { color: var(--text-muted); font-size: 0.8rem; }
+
+.jlb-final {
+  font-family: "Space Mono", monospace;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--accent-gold);
+}
+
+.jlb-judge-count {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* ─── Shared form hint ───────────────────────────────────────────────────────── */
+
+/* .height-form-hint already defined above — reused by JudgedLeaderboard too */
 
 @media (max-width: 900px) {
   .tournament-body-v2 { grid-template-columns: 1fr; }

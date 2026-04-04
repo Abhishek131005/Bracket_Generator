@@ -34,6 +34,7 @@ export interface TournamentStage {
 
 export interface StageFixture {
   id: string;
+  stageId: string;
   code?: string | null;
   roundIndex: number;
   matchIndex: number;
@@ -141,6 +142,7 @@ function mapFixture(record: any): StageFixture {
     leftScore: r.leftScore ?? null,
     rightScore: r.rightScore ?? null,
     status: record.status as FixtureStatus,
+    stageId: record.stageId,
     autoAdvanceParticipantId: record.autoAdvanceParticipantId,
     bracket: r.bracket ?? null,
     winnerGoesTo: r.winnerGoesTo ?? null,
@@ -1464,6 +1466,45 @@ export async function listPerformanceEntries(stageId: string): Promise<Performan
   }));
 }
 
-export async function deletePerformanceEntry(entryId: string): Promise<void> {
+export async function deletePerformanceEntry(entryId: string): Promise<{ stageId: string }> {
+  const entry = await prisma.performanceEntry.findUniqueOrThrow({ where: { id: entryId }, select: { stageId: true } });
   await prisma.performanceEntry.delete({ where: { id: entryId } });
+  return { stageId: entry.stageId };
+}
+
+// ── Direct Final / Judged Leaderboard ─────────────────────────────────────────
+
+export async function generateLeaderboardStage(
+  input: GenerateStageInput & { format: "DIRECT_FINAL" | "JUDGED_LEADERBOARD" }
+): Promise<{ stage: TournamentStage }> {
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: input.tournamentId },
+    include: { participants: true },
+  });
+
+  if (!tournament) throw new Error("Tournament not found.");
+  if ((tournament.participants as any[]).length < 2)
+    throw new Error("Add at least 2 participants before generating a stage.");
+
+  const nextSequence = await getNextSequence(input.tournamentId);
+  const rankingRule =
+    input.format === "JUDGED_LEADERBOARD" ? "JUDGES_SCORE_DESC" : tournament.rankingRule;
+  const defaultName =
+    input.format === "JUDGED_LEADERBOARD"
+      ? `Judged Event — Stage ${nextSequence}`
+      : `Final — Stage ${nextSequence}`;
+
+  const stage = await prisma.stage.create({
+    data: {
+      tournamentId: tournament.id,
+      sequence: nextSequence,
+      name: input.stageName?.trim() || defaultName,
+      format: input.format,
+      rankingRule,
+      status: "DRAFT",
+      config: null,
+    },
+  });
+
+  return { stage: mapStage(stage) };
 }

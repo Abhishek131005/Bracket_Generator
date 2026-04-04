@@ -213,6 +213,7 @@ export interface TournamentStage {
 
 export interface StageFixture {
   id: string;
+  stageId: string;
   code?: string | null;
   bracket?: BracketType | null;
   roundIndex: number;

@@ -117,6 +117,7 @@ export interface TournamentStage {
 
 export interface StageFixture {
   id: string;
+  stageId: string;
   roundIndex: number;
   matchIndex: number;
   leftParticipantId: string | null;

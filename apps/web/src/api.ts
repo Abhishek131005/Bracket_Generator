@@ -234,12 +234,19 @@ export async function addPerformanceEntry(
   participantId: string,
   metricValue: number,
   unit?: string,
-  fixtureId?: string
+  fixtureId?: string,
+  metadata?: string
 ): Promise<PerformanceEntry> {
   const res = await fetch(`/api/stages/${stageId}/performances`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ participantId, metricValue, unit, ...(fixtureId ? { fixtureId } : {}) }),
+    body: JSON.stringify({
+      participantId,
+      metricValue,
+      ...(unit ? { unit } : {}),
+      ...(fixtureId ? { fixtureId } : {}),
+      ...(metadata ? { metadata } : {}),
+    }),
   });
   const body = await parseResponse<ApiItemResponse<PerformanceEntry>>(res);
   return body.data;
@@ -265,6 +272,32 @@ export async function generateMultiEventPointsStageForTournament(
 export async function deletePerformanceEntry(entryId: string): Promise<void> {
   const res = await fetch(`/api/performances/${entryId}`, { method: "DELETE" });
   await parseResponse<{ message: string }>(res);
+}
+
+export async function generateDirectFinalStageForTournament(
+  tournamentId: string,
+  stageName?: string
+): Promise<{ stage: TournamentStage }> {
+  const res = await fetch(`/api/tournaments/${tournamentId}/stages/direct-final`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(stageName ? { stageName } : {}),
+  });
+  const body = await parseResponse<{ data: { stage: TournamentStage } }>(res);
+  return body.data;
+}
+
+export async function generateJudgedLeaderboardStageForTournament(
+  tournamentId: string,
+  stageName?: string
+): Promise<{ stage: TournamentStage }> {
+  const res = await fetch(`/api/tournaments/${tournamentId}/stages/judged-leaderboard`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(stageName ? { stageName } : {}),
+  });
+  const body = await parseResponse<{ data: { stage: TournamentStage } }>(res);
+  return body.data;
 }
 
 export async function generateSingleEliminationBracket(

@@ -9,6 +9,44 @@ import {
   StageFixture,
 } from "./types";
 
+// ── Champion detection ────────────────────────────────────────────────────────
+
+/** Returns the winner's name from the final match, or null if not yet decided. */
+export function getChampion(bracket: SingleEliminationBracket): string | null {
+  const lastRound = bracket.rounds[bracket.rounds.length - 1];
+  if (!lastRound || lastRound.matches.length !== 1) return null;
+  return (lastRound.matches[0] as any)._winner ?? null;
+}
+
+/**
+ * Returns the Grand Final winner's name for a double-elimination bracket.
+ * Grand final may have 1 or 2 matches (bracket-reset scenario);
+ * the champion is from the last completed GF match.
+ */
+export function getDEChampion(bracket: DoubleEliminationBracket): string | null {
+  const gfMatches = bracket.grandFinal.matches as any[];
+  if (!gfMatches.length) return null;
+  const lastWinner = [...gfMatches].reverse().find((m) => m._winner)?._winner;
+  return lastWinner ?? null;
+}
+
+/**
+ * Returns the set of fixture IDs that are on the champion's winning path through
+ * a single-elimination bracket (i.e., every match the champion competed in).
+ */
+export function getBracketWinnerPath(bracket: SingleEliminationBracket): Set<string> {
+  const path = new Set<string>();
+  const champion = getChampion(bracket);
+  if (!champion) return path;
+  for (const round of bracket.rounds) {
+    const match = round.matches.find(
+      (m) => m.left.participantName === champion || m.right.participantName === champion
+    );
+    if (match) path.add(match.id);
+  }
+  return path;
+}
+
 /**
  * Rebuild a SingleEliminationBracket display object purely from persisted fixtures.
  * This means the Bracket tab always reflects the latest scores & winner advancement.

@@ -4,6 +4,7 @@ import { buildBracketFromFixtures, buildDEBracketFromFixtures } from "../bracket
 import { FORMAT_LABELS } from "../constants";
 import { useFixtures } from "../hooks/useQueries";
 import { useGeneratePlayoff } from "../hooks/useMutations";
+import { useSocketSync } from "../hooks/useSocketSync";
 import { useAppStore } from "../store";
 import type {
   DoubleEliminationBracket,
@@ -12,6 +13,7 @@ import type {
   TournamentStage,
 } from "../types";
 import { BracketCanvas } from "./BracketCanvas";
+import { BracketScoreModal, type BracketMatchInfo } from "./BracketScoreModal";
 import { DEBracketCanvas } from "./DEBracketCanvas";
 import { FixturesView } from "./FixturesView";
 import { HeatsView } from "./HeatsView";
@@ -29,6 +31,8 @@ export function StageDetailPanel({
   const setSelectedStageId = useAppStore((s) => s.setSelectedStageId);
   const generatePlayoff = useGeneratePlayoff(tournamentId);
 
+  useSocketSync(stage.id);
+
   const isLeaderboard = ["DIRECT_FINAL", "HEATS_PLUS_FINAL", "MULTI_EVENT_POINTS", "JUDGED_LEADERBOARD"].includes(stage.format);
   const isHeatsPlusFinal = stage.format === "HEATS_PLUS_FINAL";
   const isMultiEvent = stage.format === "MULTI_EVENT_POINTS";
@@ -44,6 +48,17 @@ export function StageDetailPanel({
   const [liveDEBracket, setLiveDEBracket] = useState<DoubleEliminationBracket | null>(null);
   const [playoffCount, setPlayoffCount] = useState("4");
   const [playoffError, setPlayoffError] = useState("");
+  const [bracketModal, setBracketModal] = useState<BracketMatchInfo | null>(null);
+
+  const handleMatchClick = useCallback((
+    fixtureId: string,
+    leftLabel: string | null,
+    rightLabel: string | null,
+    leftScore: number | null,
+    rightScore: number | null
+  ) => {
+    setBracketModal({ fixtureId, stageId: stage.id, leftLabel, rightLabel, leftScore, rightScore });
+  }, [stage.id]);
 
   const tabs = useMemo(() => {
     const t: string[] = [];
@@ -135,7 +150,7 @@ export function StageDetailPanel({
                   <span>{liveBracket.byeCount} byes</span>
                   <span style={{ color: "var(--accent-lime)", borderColor: "rgba(199,244,100,0.3)" }}>✓ Live — updates with scores</span>
                 </div>
-                <div className="bracket-scroll"><BracketCanvas bracket={liveBracket} /></div>
+                <div className="bracket-scroll"><BracketCanvas bracket={liveBracket} onMatchClick={handleMatchClick} /></div>
               </div>
             ) : (
               <div className="empty-state"><span className="empty-icon">🎯</span><p>No fixtures found. Generate this stage first.</p></div>
@@ -154,7 +169,7 @@ export function StageDetailPanel({
                   <span>{liveDEBracket.losersRounds.length} LB rounds</span>
                   <span style={{ color: "var(--accent-coral)", borderColor: "rgba(255,107,53,0.3)" }}>✓ Live — updates with scores</span>
                 </div>
-                <div className="bracket-scroll"><DEBracketCanvas bracket={liveDEBracket} /></div>
+                <div className="bracket-scroll"><DEBracketCanvas bracket={liveDEBracket} onMatchClick={handleMatchClick} /></div>
               </div>
             ) : (
               <div className="empty-state"><span className="empty-icon">🎯</span><p>No fixtures found. Generate this stage first.</p></div>
@@ -200,6 +215,8 @@ export function StageDetailPanel({
           </motion.div>
         )}
       </AnimatePresence>
+
+      <BracketScoreModal match={bracketModal} onClose={() => setBracketModal(null)} />
     </div>
   );
 }
