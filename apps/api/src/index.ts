@@ -4,6 +4,8 @@ import express, { type Response } from "express";
 import { Server as SocketIOServer } from "socket.io";
 import { z } from "zod";
 import { sportsCatalog } from "./data/sports.js";
+import { requireAuth, requireRole, signToken } from "./middleware/auth.js";
+import { registerUser, verifyCredentials } from "./repositories/auth.js";
 import { buildSingleEliminationBracket } from "./engine/singleElimination.js";
 import { buildRoundRobinFixtures } from "./engine/roundRobin.js";
 import { buildDoubleEliminationBracket } from "./engine/doubleElimination.js";
@@ -163,6 +165,56 @@ app.get("/api/sports", (_request, response) => {
   response.status(200).json({ data: sportsCatalog, count: sportsCatalog.length });
 });
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8, "Password must be at least 8 characters."),
+  name: z.string().min(1).max(80),
+  role: z.enum(["ADMIN", "ORGANIZER", "REFEREE", "VIEWER"]).optional(),
+});
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+app.post("/api/auth/register", async (request, response) => {
+  const parsed = registerSchema.safeParse(request.body);
+  if (!parsed.success) { sendValidationError(response, parsed.error.issues); return; }
+  try {
+    const user = await registerUser(parsed.data);
+    const token = signToken({ sub: user.id, email: user.email, name: user.name, role: user.role });
+    response.status(201).json({ token, user });
+  } catch (error) {
+    if (error instanceof Error && error.message === "EMAIL_TAKEN") {
+      response.status(409).json({ message: "An account with that email already exists." });
+      return;
+    }
+    sendOperationError(response, error, "Could not create account.");
+  }
+});
+
+app.post("/api/auth/login", async (request, response) => {
+  const parsed = loginSchema.safeParse(request.body);
+  if (!parsed.success) { sendValidationError(response, parsed.error.issues); return; }
+  try {
+    const user = await verifyCredentials(parsed.data);
+    const token = signToken({ sub: user.id, email: user.email, name: user.name, role: user.role });
+    response.status(200).json({ token, user });
+  } catch (error) {
+    if (error instanceof Error && error.message === "INVALID_CREDENTIALS") {
+      response.status(401).json({ message: "Invalid email or password." });
+      return;
+    }
+    sendOperationError(response, error, "Could not log in.");
+  }
+});
+
+app.get("/api/auth/me", requireAuth, (request, response) => {
+  response.status(200).json({ user: request.user });
+});
+
 app.get("/api/formats", (_request, response) => {
   const formats = Array.from(new Set(sportsCatalog.map((sport) => sport.format))).sort();
   response.status(200).json({ data: formats, count: formats.length });
@@ -197,7 +249,7 @@ const createTournamentSchema = z.object({
   sportId: z.number().int().positive(),
 });
 
-app.post("/api/tournaments", async (request, response) => {
+app.post("/api/tournaments", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = createTournamentSchema.safeParse(request.body);
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -226,7 +278,7 @@ app.get("/api/tournaments/:id/participants", async (request, response) => {
   }
 });
 
-app.post("/api/tournaments/:id/participants", async (request, response) => {
+app.post("/api/tournaments/:id/participants", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = addParticipantsSchema.safeParse(request.body);
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -259,7 +311,7 @@ const stageNameSchema = z.object({
   totalRounds: z.number().int().min(1).max(20).optional(),
 });
 
-app.post("/api/tournaments/:id/stages/single-elimination", async (request, response) => {
+app.post("/api/tournaments/:id/stages/single-elimination", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = stageNameSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -276,7 +328,7 @@ app.post("/api/tournaments/:id/stages/single-elimination", async (request, respo
   }
 });
 
-app.post("/api/tournaments/:id/stages/round-robin", async (request, response) => {
+app.post("/api/tournaments/:id/stages/round-robin", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = stageNameSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -293,7 +345,7 @@ app.post("/api/tournaments/:id/stages/round-robin", async (request, response) =>
   }
 });
 
-app.post("/api/tournaments/:id/stages/double-elimination", async (request, response) => {
+app.post("/api/tournaments/:id/stages/double-elimination", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = stageNameSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -310,7 +362,7 @@ app.post("/api/tournaments/:id/stages/double-elimination", async (request, respo
   }
 });
 
-app.post("/api/tournaments/:id/stages/swiss", async (request, response) => {
+app.post("/api/tournaments/:id/stages/swiss", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = stageNameSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -328,7 +380,7 @@ app.post("/api/tournaments/:id/stages/swiss", async (request, response) => {
   }
 });
 
-app.post("/api/tournaments/:id/stages/league-plus-playoff", async (request, response) => {
+app.post("/api/tournaments/:id/stages/league-plus-playoff", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = stageNameSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -350,7 +402,7 @@ const heatsPlusFinalSchema = z.object({
   participantsPerHeat: z.number().int().min(2).max(32).optional(),
 });
 
-app.post("/api/tournaments/:id/stages/heats-plus-final", async (request, response) => {
+app.post("/api/tournaments/:id/stages/heats-plus-final", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = heatsPlusFinalSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -373,7 +425,7 @@ const multiEventSchema = z.object({
   eventNames: z.array(z.string().min(1).max(80)).min(1).max(20).optional(),
 });
 
-app.post("/api/tournaments/:id/stages/multi-event-points", async (request, response) => {
+app.post("/api/tournaments/:id/stages/multi-event-points", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = multiEventSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -391,7 +443,7 @@ app.post("/api/tournaments/:id/stages/multi-event-points", async (request, respo
   }
 });
 
-app.post("/api/tournaments/:id/stages/direct-final", async (request, response) => {
+app.post("/api/tournaments/:id/stages/direct-final", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = stageNameSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -409,7 +461,7 @@ app.post("/api/tournaments/:id/stages/direct-final", async (request, response) =
   }
 });
 
-app.post("/api/tournaments/:id/stages/judged-leaderboard", async (request, response) => {
+app.post("/api/tournaments/:id/stages/judged-leaderboard", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = stageNameSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -433,7 +485,7 @@ const playoffSchema = z.object({
   stageName: z.string().min(1).max(120).optional(),
 });
 
-app.post("/api/tournaments/:id/stages/playoff", async (request, response) => {
+app.post("/api/tournaments/:id/stages/playoff", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = playoffSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -458,7 +510,7 @@ const swissRePairSchema = z.object({
   roundIndex: z.number().int().min(2),
 });
 
-app.post("/api/stages/:stageId/swiss/pair-round", async (request, response) => {
+app.post("/api/stages/:stageId/swiss/pair-round", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = swissRePairSchema.safeParse(request.body ?? {});
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -491,7 +543,7 @@ const updateFixtureSchema = z.object({
   awayScore: z.number().int().min(0),
 });
 
-app.patch("/api/fixtures/:fixtureId/result", async (request, response) => {
+app.patch("/api/fixtures/:fixtureId/result", requireRole("REFEREE", "ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = updateFixtureSchema.safeParse(request.body);
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -540,7 +592,7 @@ app.get("/api/stages/:stageId/performances", async (request, response) => {
   }
 });
 
-app.post("/api/stages/:stageId/performances", async (request, response) => {
+app.post("/api/stages/:stageId/performances", requireRole("REFEREE", "ORGANIZER", "ADMIN"), async (request, response) => {
   const parsedBody = addPerformanceSchema.safeParse(request.body);
   if (!parsedBody.success) {
     sendValidationError(response, parsedBody.error.issues);
@@ -558,7 +610,7 @@ app.post("/api/stages/:stageId/performances", async (request, response) => {
   }
 });
 
-app.delete("/api/performances/:entryId", async (request, response) => {
+app.delete("/api/performances/:entryId", requireRole("REFEREE", "ORGANIZER", "ADMIN"), async (request, response) => {
   try {
     const { stageId } = await deletePerformanceEntry(request.params.entryId);
     io.to(`stage:${stageId}`).emit("performance:updated", { stageId });

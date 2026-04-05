@@ -1,5 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { useEffect } from "react";
 import { Nav } from "./components/Nav";
+import { AuthPage } from "./pages/AuthPage";
 import { CreatePage } from "./pages/CreatePage";
 import { HomePage } from "./pages/HomePage";
 import { PlaygroundPage } from "./pages/PlaygroundPage";
@@ -8,8 +10,20 @@ import { TournamentPage } from "./pages/TournamentPage";
 import { useAppStore } from "./store";
 import { useSports, useTournaments } from "./hooks/useQueries";
 
+// Pages that require the user to be logged in
+const PROTECTED_PAGES = new Set(["create", "tournament"]);
+
 export function App() {
   const page = useAppStore((s) => s.page);
+  const setPage = useAppStore((s) => s.setPage);
+  const user = useAppStore((s) => s.user);
+
+  // Redirect to login if trying to access a protected page without auth
+  useEffect(() => {
+    if (PROTECTED_PAGES.has(page) && !user) {
+      setPage("login");
+    }
+  }, [page, user, setPage]);
 
   const { error: sportsError } = useSports();
   const { error: tournamentsError } = useTournaments();
@@ -35,6 +49,8 @@ export function App() {
           </motion.div>
         )}
         <AnimatePresence mode="wait">
+          {page === "login"      && <AuthPage key="login" mode="login" />}
+          {page === "register"   && <AuthPage key="register" mode="register" />}
           {page === "home"       && <HomePage key="home" />}
           {page === "create"     && <CreatePage key="create" />}
           {page === "tournament" && <TournamentPage key="tournament" />}

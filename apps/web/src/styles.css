@@ -2812,3 +2812,110 @@ body::after {
 .me-del-btn:hover { color: var(--accent-coral); background: rgba(255,107,53,0.12); }
 
 .me-pts-unit { font-size: 0.72rem; color: var(--text-dim); font-weight: 400; }
+
+/* ─── Auth Page ──────────────────────────────────────────────────────────── */
+.auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 70vh;
+  padding: 2rem 1rem;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2.5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.auth-header { text-align: center; }
+.auth-logo {
+  display: inline-block;
+  font-family: "Space Mono", monospace;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--accent-lime);
+  letter-spacing: 0.12em;
+  margin-bottom: 0.75rem;
+}
+.auth-title { font-size: 1.35rem; font-weight: 800; margin: 0 0 0.35rem; }
+.auth-subtitle { font-size: 0.83rem; color: var(--text-muted); margin: 0; }
+
+.auth-form { display: flex; flex-direction: column; gap: 1rem; }
+.auth-field { display: flex; flex-direction: column; gap: 0.35rem; overflow: hidden; }
+.auth-label { font-size: 0.78rem; font-weight: 700; color: var(--text-dim); letter-spacing: 0.04em; text-transform: uppercase; }
+.auth-hint { font-size: 0.72rem; color: var(--text-muted); margin: 0.2rem 0 0; }
+.auth-submit { margin-top: 0.5rem; }
+
+.auth-switch {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+.auth-switch-btn {
+  background: none;
+  border: none;
+  color: var(--accent-lime);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+.auth-switch-btn:hover { color: #fff; }
+
+/* ─── Nav auth area ──────────────────────────────────────────────────────── */
+.nav-auth {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: auto;
+  padding-left: 1rem;
+  border-left: 1px solid var(--border);
+}
+
+.nav-user-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-main);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-role-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid;
+}
+.nav-role-badge.role-admin     { color: var(--accent-gold);  border-color: rgba(244,211,94,0.4);  background: rgba(244,211,94,0.1); }
+.nav-role-badge.role-organizer { color: var(--accent-lime);  border-color: rgba(199,244,100,0.4); background: rgba(199,244,100,0.1); }
+.nav-role-badge.role-referee   { color: #a78bfa;             border-color: rgba(167,139,250,0.4); background: rgba(167,139,250,0.1); }
+.nav-role-badge.role-viewer    { color: var(--text-muted);   border-color: var(--border);         background: transparent; }
+
+.nav-logout-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.nav-logout-btn:hover { color: var(--accent-coral); border-color: var(--accent-coral); }
+
+.nav-login-btn { font-size: 0.78rem; padding: 0.3rem 0.9rem; }

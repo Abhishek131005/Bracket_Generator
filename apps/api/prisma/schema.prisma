@@ -102,6 +102,25 @@ model Fixture {
   @@index([stageId, status])
 }
 
+enum Role {
+  ADMIN
+  ORGANIZER
+  REFEREE
+  VIEWER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(VIEWER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([email])
+}
+
 model PerformanceEntry {
   id            String      @id @default(cuid())
   stageId       String
