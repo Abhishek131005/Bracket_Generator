@@ -47,6 +47,7 @@ export function BracketCanvas({
         </div>
       )}
 
+      <div className="bracket-scroll-wrap">
       <svg viewBox={`0 0 ${totalW} ${totalH}`} width="100%" style={{ minWidth: totalW, overflow: "visible" }}>
         <defs>
           <linearGradient id="card-grad" x1="0" y1="0" x2="1" y2="1">
@@ -252,6 +253,7 @@ export function BracketCanvas({
           </text>
         ))}
       </svg>
+      </div>
     </div>
   );
 }

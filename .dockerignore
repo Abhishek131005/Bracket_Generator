@@ -1,0 +1,7 @@
+**/node_modules
+**/.env
+**/dist
+**/.git
+**/coverage
+apps/web/dist
+docs

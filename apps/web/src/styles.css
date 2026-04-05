@@ -1387,7 +1387,26 @@ body::after {
   .sport-preview-row { grid-template-columns: repeat(2, 1fr); }
   .create-layout { grid-template-columns: 1fr; }
   .tournament-body { grid-template-columns: 1fr; }
+  .tournament-body-v2 { grid-template-columns: 1fr; }
   .playground-layout { grid-template-columns: 1fr; }
+
+  /* Bracket canvas: allow horizontal scroll rather than squashing */
+  .bracket-scroll-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .bracket-scroll-wrap svg { min-width: 540px; }
+
+  /* Standings grid: scroll instead of wrapping 10 columns */
+  .standings-grid-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .standings-grid-header,
+  .standings-grid-row { min-width: 560px; }
+
+  /* Height leaderboard countback cols: scroll */
+  .leaderboard-list { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .height-lb-header,
+  .height-lb-row { min-width: 520px; }
+
+  /* Nav auth: hide verbose name + role badge to save space */
+  .nav-user-name { display: none; }
+  .nav-role-badge { display: none; }
 }
 
 @media (max-width: 650px) {
@@ -1396,10 +1415,74 @@ body::after {
   .tournament-grid { grid-template-columns: 1fr; }
   .sport-preview-row { grid-template-columns: 1fr; }
   .home-hero { padding: 3rem 1.5rem; }
-  .main-nav { gap: 1rem; padding: 0.7rem 1rem; }
-  .nav-links { gap: 0; overflow-x: auto; }
-  .nav-link { font-size: 0.76rem; padding: 0.4rem 0.6rem; white-space: nowrap; }
   .app-main { padding: 1.25rem 1rem 3rem; }
+
+  /* Nav: two-row layout on small screens */
+  .main-nav {
+    flex-wrap: wrap;
+    gap: 0;
+    padding: 0.6rem 0.85rem 0;
+    row-gap: 0;
+  }
+  .nav-logo { padding-bottom: 0.6rem; }
+  .nav-auth {
+    margin-left: auto;
+    padding-left: 0.75rem;
+    border-left: none;
+    padding-bottom: 0.6rem;
+  }
+  /* Links on second row, full width, scrollable */
+  .nav-links {
+    order: 3;
+    flex: 0 0 100%;
+    gap: 0;
+    overflow-x: auto;
+    border-top: 1px solid var(--border);
+    padding: 0.25rem 0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .nav-links::-webkit-scrollbar { display: none; }
+  .nav-link { font-size: 0.76rem; padding: 0.4rem 0.65rem; white-space: nowrap; }
+
+  /* Stage detail panel: tighter padding */
+  .stage-detail-panel { padding: 0.75rem; }
+
+  /* Score modal: full-width on mobile */
+  .bsm-panel { width: 94vw; max-width: 94vw; }
+
+  /* Auth card: remove side padding on very small screens */
+  .auth-card { padding: 1.75rem 1.25rem; }
+
+  /* Create page form: single column always */
+  .create-form-grid { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 480px) {
+  .sport-grid-v2 { grid-template-columns: 1fr; }
+  .stats-row { grid-template-columns: 1fr 1fr; }
+
+  /* Hero section: compact */
+  .home-hero-title { font-size: clamp(2rem, 10vw, 3.5rem); }
+  .home-hero { padding: 2rem 1rem; }
+
+  /* Cards: tighter padding */
+  .card { padding: 1rem; }
+  .tournament-card { padding: 1rem; }
+  .stage-card { padding: 0.85rem 1rem; }
+
+  /* Nav auth: show only icon-sized logout/login */
+  .nav-logout-btn { padding: 0.2rem 0.5rem; font-size: 0.7rem; }
+  .nav-login-btn { padding: 0.2rem 0.65rem; font-size: 0.72rem; }
+
+  /* Tables/grids: ensure text doesn't overflow */
+  .lb-name, .team-name-cell { max-width: 120px; }
+
+  /* Judged leaderboard score pills: wrap */
+  .jlb-scores { flex-wrap: wrap; gap: 0.25rem; }
+
+  /* Footer: compact */
+  .app-footer { padding: 1rem; font-size: 0.72rem; }
 }
 /* ─── NEW: Tournament Body v2 ─────────────────────────────────────────────── */
 .tournament-body-v2 {

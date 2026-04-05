@@ -10,6 +10,7 @@
     "prisma:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio --port 5555",
+    "seed": "node --env-file=.env --import tsx/esm src/seed.ts",
     "test": "node --import tsx/esm --test src/**/*.test.ts"
   },
   "dependencies": {

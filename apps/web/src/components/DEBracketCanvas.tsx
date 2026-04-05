@@ -256,15 +256,17 @@ export function DEBracketCanvas({
         </div>
       )}
 
-      <svg
-        viewBox={`0 0 ${totalW} ${totalH}`}
-        width="100%"
-        style={{ minWidth: Math.max(totalW, 600), overflow: "visible", display: "block" }}
-      >
-        {sections.map((spec) => <g key={`conns-${spec.label}`}>{renderConnectors(spec)}</g>)}
-        {sections.map((spec) => renderSectionHeader(spec))}
-        {sections.map((spec) => <g key={`cards-${spec.label}`}>{renderCards(spec)}</g>)}
-      </svg>
+      <div className="bracket-scroll-wrap">
+        <svg
+          viewBox={`0 0 ${totalW} ${totalH}`}
+          width="100%"
+          style={{ minWidth: Math.max(totalW, 600), overflow: "visible", display: "block" }}
+        >
+          {sections.map((spec) => <g key={`conns-${spec.label}`}>{renderConnectors(spec)}</g>)}
+          {sections.map((spec) => renderSectionHeader(spec))}
+          {sections.map((spec) => <g key={`cards-${spec.label}`}>{renderCards(spec)}</g>)}
+        </svg>
+      </div>
     </div>
   );
 }
