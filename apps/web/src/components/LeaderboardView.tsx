@@ -3,7 +3,8 @@ import { type FormEvent, useMemo, useState } from "react";
 import { METRIC_LABEL, METRIC_UNIT, RANKING_DIRECTION } from "../constants";
 import { usePerformances } from "../hooks/useQueries";
 import { useAddPerformance, useDeletePerformance } from "../hooks/useMutations";
-import { formatTime } from "../utils";
+import { usePermissions } from "../hooks/usePermissions";
+import { formatTime, rankBestAttempts } from "../utils";
 import type { TournamentParticipant } from "../types";
 import { HeightLeaderboard } from "./HeightLeaderboard";
 import { JudgedLeaderboard } from "./JudgedLeaderboard";
@@ -34,6 +35,7 @@ function GenericLeaderboard({ stageId, participants, rankingRule }: {
   const { data: entries = [], isLoading } = usePerformances(stageId);
   const addPerformance = useAddPerformance(stageId);
   const deletePerformance = useDeletePerformance(stageId);
+  const { canScore } = usePermissions();
 
   const direction = RANKING_DIRECTION[rankingRule] ?? "ASC";
   const metricLabel = METRIC_LABEL[rankingRule] ?? "Value";
@@ -44,10 +46,8 @@ function GenericLeaderboard({ stageId, participants, rankingRule }: {
   const [metricValue, setMetricValue] = useState("");
   const [error, setError] = useState("");
 
-  const ranked = useMemo(() =>
-    [...entries].sort((a, b) => direction === "ASC" ? a.metricValue - b.metricValue : b.metricValue - a.metricValue),
-    [entries, direction]
-  );
+  // One row per athlete (their best attempt), with shared places for ties
+  const ranked = useMemo(() => rankBestAttempts(entries, direction), [entries, direction]);
 
   function handleAdd(e: FormEvent) {
     e.preventDefault();
@@ -68,7 +68,7 @@ function GenericLeaderboard({ stageId, participants, rankingRule }: {
 
   return (
     <div className="leaderboard-view">
-      <form onSubmit={handleAdd} className="perf-entry-form">
+      {canScore && <form onSubmit={handleAdd} className="perf-entry-form">
         <select className="field-select perf-select" value={selectedParticipantId} onChange={(e) => setSelectedParticipantId(e.target.value)}>
           <option value="">Select participant...</option>
           {participants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -84,7 +84,7 @@ function GenericLeaderboard({ stageId, participants, rankingRule }: {
           <p className="height-form-hint">Enter time in seconds (e.g. 9.58 for 9.58s, 65.3 for 1:05.30).</p>
         )}
         {error && <p className="form-error">{error}</p>}
-      </form>
+      </form>}
 
       {isLoading ? (
         <div className="empty-state"><span className="empty-icon">⏳</span><p>Loading...</p></div>
@@ -96,20 +96,25 @@ function GenericLeaderboard({ stageId, participants, rankingRule }: {
             <span>#</span><span>Participant</span><span>{metricLabel}</span><span></span>
           </div>
           <AnimatePresence mode="popLayout">
-            {ranked.map((entry, i) => (
-              <motion.div key={entry.id} className={`lb-row ${i === 0 ? "lb-row-best" : ""}`}
+            {ranked.map(({ entry, rank, attempts }) => (
+              <motion.div key={entry.id} className={`lb-row ${rank === 1 ? "lb-row-best" : ""}`}
                 layout
                 initial={{ opacity: 0, scale: 0.97 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ layout: { duration: 0.35, ease: "easeOut" }, duration: 0.2 }}>
-                <span className={`lb-rank rank-badge rank-${Math.min(i + 1, 4)}`}>{i + 1}</span>
-                <span className="lb-name">{entry.participantName}</span>
+                <span className={`lb-rank rank-badge rank-${Math.min(rank, 4)}`}>
+                  {ranked.filter((r) => r.rank === rank).length > 1 ? `=${rank}` : rank}
+                </span>
+                <span className="lb-name">
+                  {entry.participantName}
+                  {attempts > 1 && <span className="lb-attempts" title="Best of all recorded attempts"> · best of {attempts}</span>}
+                </span>
                 <span className="lb-metric">
                   <strong>{isTime ? formatTime(entry.metricValue) : entry.metricValue}</strong>
                   {!isTime && entry.unit && <span className="lb-unit"> {entry.unit}</span>}
                 </span>
-                <button className="lb-delete-btn" onClick={() => deletePerformance.mutate(entry.id)} title="Remove">✕</button>
+                {canScore ? <button className="lb-delete-btn" onClick={() => deletePerformance.mutate(entry.id)} title="Remove">✕</button> : <span />}
               </motion.div>
             ))}
           </AnimatePresence>

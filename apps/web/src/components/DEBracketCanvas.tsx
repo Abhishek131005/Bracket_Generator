@@ -128,7 +128,7 @@ export function DEBracketCanvas({
         const isAuto = match.status === "AUTO_ADVANCE";
         const isDone = match.status === "COMPLETED";
         const isTBD = !match.leftLabel || match.leftLabel === "TBD" || !match.rightLabel || match.rightLabel === "TBD";
-        const canClick = !!onMatchClick && !isAuto && !isTBD;
+        const canClick = !!onMatchClick && !isAuto && !isTBD && match.status !== "PENDING";
         const isHovered = hoveredId === match.id;
         const accent = spec.accent;
         const ext = match as any;

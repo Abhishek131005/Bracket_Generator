@@ -5,12 +5,14 @@ import { Server as SocketIOServer } from "socket.io";
 import { z } from "zod";
 import { sportsCatalog } from "./data/sports.js";
 import { requireAuth, requireRole, signToken } from "./middleware/auth.js";
-import { registerUser, verifyCredentials } from "./repositories/auth.js";
+import { getUserById, listUsers, registerUser, setUserRole, verifyCredentials } from "./repositories/auth.js";
+import { loginSchema, registerSchema, setRoleSchema } from "./schemas/auth.js";
 import { buildSingleEliminationBracket } from "./engine/singleElimination.js";
 import { buildRoundRobinFixtures } from "./engine/roundRobin.js";
 import { buildDoubleEliminationBracket } from "./engine/doubleElimination.js";
 import { buildSwissFixtures } from "./engine/swiss.js";
 import { calculateStandings, calculateLeaderboard } from "./engine/standings.js";
+import { DownstreamPlayedError } from "./engine/progression.js";
 import {
   addParticipants,
   createTournament,
@@ -23,6 +25,11 @@ import {
   generateMultiEventPointsStage,
   generateLeaderboardStage,
   generatePlayoffStage,
+  refreshTournamentStatus,
+  setStageStatus,
+  deleteTournament,
+  deleteStage,
+  deleteParticipant,
   regenerateSwissRoundPairings,
   getTournamentById,
   listParticipants,
@@ -167,18 +174,6 @@ app.get("/api/sports", (_request, response) => {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8, "Password must be at least 8 characters."),
-  name: z.string().min(1).max(80),
-  role: z.enum(["ADMIN", "ORGANIZER", "REFEREE", "VIEWER"]).optional(),
-});
-
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
-});
-
 app.post("/api/auth/register", async (request, response) => {
   const parsed = registerSchema.safeParse(request.body);
   if (!parsed.success) { sendValidationError(response, parsed.error.issues); return; }
@@ -213,6 +208,58 @@ app.post("/api/auth/login", async (request, response) => {
 
 app.get("/api/auth/me", requireAuth, (request, response) => {
   response.status(200).json({ user: request.user });
+});
+
+// Re-issue the token from the database, so a role change made by an admin takes effect
+// without waiting for the old token to expire.
+app.post("/api/auth/refresh", requireAuth, async (request, response) => {
+  try {
+    const user = await getUserById(request.user!.sub);
+    if (!user) {
+      response.status(401).json({ message: "Account no longer exists." });
+      return;
+    }
+    const token = signToken({ sub: user.id, email: user.email, name: user.name, role: user.role });
+    response.status(200).json({ token, user });
+  } catch (error) {
+    sendOperationError(response, error, "Could not refresh session.");
+  }
+});
+
+// ── Admin: user management ────────────────────────────────────────────────────
+
+app.get("/api/admin/users", requireRole("ADMIN"), async (_request, response) => {
+  try {
+    response.status(200).json({ data: await listUsers() });
+  } catch (error) {
+    sendOperationError(response, error, "Could not fetch users.");
+  }
+});
+
+app.patch("/api/admin/users/:userId/role", requireRole("ADMIN"), async (request, response) => {
+  const parsedBody = setRoleSchema.safeParse(request.body);
+  if (!parsedBody.success) {
+    sendValidationError(response, parsedBody.error.issues);
+    return;
+  }
+  if (request.params.userId === request.user!.sub) {
+    response.status(400).json({ message: "You cannot change your own role. Ask another admin." });
+    return;
+  }
+  try {
+    const user = await setUserRole(request.params.userId, parsedBody.data.role);
+    response.status(200).json({ data: user });
+  } catch (error) {
+    if (error instanceof Error && error.message === "USER_NOT_FOUND") {
+      response.status(404).json({ message: "User not found." });
+      return;
+    }
+    if (error instanceof Error && error.message === "LAST_ADMIN") {
+      response.status(400).json({ message: "There must always be at least one admin." });
+      return;
+    }
+    sendOperationError(response, error, "Could not change role.");
+  }
 });
 
 app.get("/api/formats", (_request, response) => {
@@ -263,6 +310,15 @@ app.post("/api/tournaments", requireRole("ORGANIZER", "ADMIN"), async (request, 
   }
 });
 
+app.delete("/api/tournaments/:id", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
+  try {
+    await deleteTournament(request.params.id);
+    response.status(200).json({ message: "Tournament deleted." });
+  } catch (error) {
+    sendOperationError(response, error, "Could not delete tournament.");
+  }
+});
+
 // ── Participants ──────────────────────────────────────────────────────────────
 
 const addParticipantsSchema = z.object({
@@ -295,6 +351,15 @@ app.post("/api/tournaments/:id/participants", requireRole("ORGANIZER", "ADMIN"),
   }
 });
 
+app.delete("/api/participants/:participantId", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
+  try {
+    await deleteParticipant(request.params.participantId);
+    response.status(200).json({ message: "Participant removed." });
+  } catch (error) {
+    sendOperationError(response, error, "Could not remove participant.");
+  }
+});
+
 // ── Stages ────────────────────────────────────────────────────────────────────
 
 app.get("/api/tournaments/:id/stages", async (request, response) => {
@@ -322,6 +387,7 @@ app.post("/api/tournaments/:id/stages/single-elimination", requireRole("ORGANIZE
       tournamentId: request.params.id,
       stageName: parsedBody.data.stageName,
     });
+    await refreshTournamentStatus(request.params.id);
     response.status(201).json({ data: stageData });
   } catch (error) {
     sendOperationError(response, error, "Could not generate stage.");
@@ -339,6 +405,7 @@ app.post("/api/tournaments/:id/stages/round-robin", requireRole("ORGANIZER", "AD
       tournamentId: request.params.id,
       stageName: parsedBody.data.stageName,
     });
+    await refreshTournamentStatus(request.params.id);
     response.status(201).json({ data: stageData });
   } catch (error) {
     sendOperationError(response, error, "Could not generate round-robin stage.");
@@ -356,6 +423,7 @@ app.post("/api/tournaments/:id/stages/double-elimination", requireRole("ORGANIZE
       tournamentId: request.params.id,
       stageName: parsedBody.data.stageName,
     });
+    await refreshTournamentStatus(request.params.id);
     response.status(201).json({ data: stageData });
   } catch (error) {
     sendOperationError(response, error, "Could not generate double-elimination stage.");
@@ -374,6 +442,7 @@ app.post("/api/tournaments/:id/stages/swiss", requireRole("ORGANIZER", "ADMIN"),
       stageName: parsedBody.data.stageName,
       totalRounds: parsedBody.data.totalRounds,
     });
+    await refreshTournamentStatus(request.params.id);
     response.status(201).json({ data: stageData });
   } catch (error) {
     sendOperationError(response, error, "Could not generate Swiss stage.");
@@ -391,6 +460,7 @@ app.post("/api/tournaments/:id/stages/league-plus-playoff", requireRole("ORGANIZ
       tournamentId: request.params.id,
       stageName: parsedBody.data.stageName,
     });
+    await refreshTournamentStatus(request.params.id);
     response.status(201).json({ data: stageData });
   } catch (error) {
     sendOperationError(response, error, "Could not generate league stage.");
@@ -414,6 +484,7 @@ app.post("/api/tournaments/:id/stages/heats-plus-final", requireRole("ORGANIZER"
       stageName: parsedBody.data.stageName,
       participantsPerHeat: parsedBody.data.participantsPerHeat,
     });
+    await refreshTournamentStatus(request.params.id);
     response.status(201).json({ data: stageData });
   } catch (error) {
     sendOperationError(response, error, "Could not generate heats stage.");
@@ -437,6 +508,7 @@ app.post("/api/tournaments/:id/stages/multi-event-points", requireRole("ORGANIZE
       stageName: parsedBody.data.stageName,
       eventNames: parsedBody.data.eventNames,
     });
+    await refreshTournamentStatus(request.params.id);
     response.status(201).json({ data: stageData });
   } catch (error) {
     sendOperationError(response, error, "Could not generate multi-event stage.");
@@ -455,6 +527,7 @@ app.post("/api/tournaments/:id/stages/direct-final", requireRole("ORGANIZER", "A
       stageName: parsedBody.data.stageName,
       format: "DIRECT_FINAL",
     });
+    await refreshTournamentStatus(request.params.id);
     response.status(201).json({ data: stageData });
   } catch (error) {
     sendOperationError(response, error, "Could not generate direct final stage.");
@@ -473,6 +546,7 @@ app.post("/api/tournaments/:id/stages/judged-leaderboard", requireRole("ORGANIZE
       stageName: parsedBody.data.stageName,
       format: "JUDGED_LEADERBOARD",
     });
+    await refreshTournamentStatus(request.params.id);
     response.status(201).json({ data: stageData });
   } catch (error) {
     sendOperationError(response, error, "Could not generate judged leaderboard stage.");
@@ -498,6 +572,7 @@ app.post("/api/tournaments/:id/stages/playoff", requireRole("ORGANIZER", "ADMIN"
       parsedBody.data.playoffTeamCount,
       parsedBody.data.stageName
     );
+    await refreshTournamentStatus(request.params.id);
     response.status(201).json({ data: stageData });
   } catch (error) {
     sendOperationError(response, error, "Could not generate playoff stage.");
@@ -527,6 +602,37 @@ app.post("/api/stages/:stageId/swiss/pair-round", requireRole("ORGANIZER", "ADMI
   }
 });
 
+app.delete("/api/stages/:stageId", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
+  try {
+    await deleteStage(request.params.stageId);
+    io.to(`stage:${request.params.stageId}`).emit("stage:updated", { stageId: request.params.stageId });
+    response.status(200).json({ message: "Stage deleted." });
+  } catch (error) {
+    sendOperationError(response, error, "Could not delete stage.");
+  }
+});
+
+// ── Stage status (leaderboard stages are closed by an organiser) ─────────────
+
+const stageStatusSchema = z.object({
+  status: z.enum(["IN_PROGRESS", "COMPLETED"]),
+});
+
+app.patch("/api/stages/:stageId/status", requireRole("ORGANIZER", "ADMIN"), async (request, response) => {
+  const parsedBody = stageStatusSchema.safeParse(request.body);
+  if (!parsedBody.success) {
+    sendValidationError(response, parsedBody.error.issues);
+    return;
+  }
+  try {
+    const stage = await setStageStatus(request.params.stageId, parsedBody.data.status);
+    io.to(`stage:${stage.id}`).emit("stage:updated", { stageId: stage.id });
+    response.status(200).json({ data: stage });
+  } catch (error) {
+    sendOperationError(response, error, "Could not update stage status.");
+  }
+});
+
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 app.get("/api/stages/:stageId/fixtures", async (request, response) => {
@@ -541,6 +647,8 @@ app.get("/api/stages/:stageId/fixtures", async (request, response) => {
 const updateFixtureSchema = z.object({
   homeScore: z.number().int().min(0),
   awayScore: z.number().int().min(0),
+  // set after the user confirms that already-played later matches may be reset
+  confirmReset: z.boolean().optional(),
 });
 
 app.patch("/api/fixtures/:fixtureId/result", requireRole("REFEREE", "ORGANIZER", "ADMIN"), async (request, response) => {
@@ -554,10 +662,16 @@ app.patch("/api/fixtures/:fixtureId/result", requireRole("REFEREE", "ORGANIZER",
       fixtureId: request.params.fixtureId,
       homeScore: parsedBody.data.homeScore,
       awayScore: parsedBody.data.awayScore,
+      confirmReset: parsedBody.data.confirmReset,
     });
     io.to(`stage:${fixture.stageId}`).emit("fixture:updated", { stageId: fixture.stageId });
+    io.to(`stage:${fixture.stageId}`).emit("stage:updated", { stageId: fixture.stageId });
     response.status(200).json({ data: fixture });
   } catch (error) {
+    if (error instanceof DownstreamPlayedError) {
+      response.status(409).json({ message: error.message, code: error.code, affected: error.affected });
+      return;
+    }
     sendOperationError(response, error, "Could not update fixture result.");
   }
 });
@@ -604,6 +718,7 @@ app.post("/api/stages/:stageId/performances", requireRole("REFEREE", "ORGANIZER"
       ...parsedBody.data,
     });
     io.to(`stage:${request.params.stageId}`).emit("performance:updated", { stageId: request.params.stageId });
+    io.to(`stage:${request.params.stageId}`).emit("stage:updated", { stageId: request.params.stageId });
     response.status(201).json({ data: entry });
   } catch (error) {
     sendOperationError(response, error, "Could not add performance entry.");

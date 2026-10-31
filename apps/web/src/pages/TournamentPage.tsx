@@ -3,7 +3,8 @@ import { type FormEvent, useEffect, useState } from "react";
 import { StageDetailPanel } from "../components/StageDetailPanel";
 import { FORMAT_LABELS } from "../constants";
 import { useParticipants, useStages, useTournaments } from "../hooks/useQueries";
-import { useAddParticipants, useGenerateStage } from "../hooks/useMutations";
+import { useAddParticipants, useDeleteParticipant, useDeleteTournament, useGenerateStage } from "../hooks/useMutations";
+import { usePermissions } from "../hooks/usePermissions";
 import { useAppStore } from "../store";
 import type { TournamentStage } from "../types";
 
@@ -42,6 +43,10 @@ export function TournamentPage() {
 
   const addParticipants = useAddParticipants(selectedId);
   const generateStage = useGenerateStage(selectedId);
+  const { canManage } = usePermissions();
+  const deleteTournament = useDeleteTournament();
+  const deleteParticipant = useDeleteParticipant(selectedId);
+  const [deleteError, setDeleteError] = useState("");
 
   const [bulkInput, setBulkInput] = useState("");
   const [stageName, setStageName] = useState("");
@@ -53,14 +58,18 @@ export function TournamentPage() {
   const [genError, setGenError] = useState("");
   const [mainTab, setMainTab] = useState<"participants" | "stages">("participants");
 
-  // Initialise selected tournament to first on load
+  // Initialise selected tournament to first on load (also covers a remembered
+  // selection that no longer exists, e.g. after the demo data was re-seeded)
   useEffect(() => {
-    if (!selectedId && tournaments.length > 0) setSelectedId(tournaments[0].id);
+    if (tournaments.length === 0) return;
+    if (!selectedId || !tournaments.some((t) => t.id === selectedId)) setSelectedId(tournaments[0].id);
   }, [tournaments, selectedId]);
 
-  // Auto-select first stage when stages load for a new tournament
+  // Auto-select first stage when stages load for a new tournament, or when the
+  // remembered stage doesn't belong to this tournament any more
   useEffect(() => {
-    if (stages.length > 0 && !selectedStageId) setSelectedStageId(stages[0].id);
+    if (stages.length === 0) return;
+    if (!selectedStageId || !stages.some((s) => s.id === selectedStageId)) setSelectedStageId(stages[0].id);
   }, [stages]);
 
   const activeTournament = tournaments.find((t) => t.id === selectedId) ?? null;
@@ -69,6 +78,24 @@ export function TournamentPage() {
   function handleTournamentChange(id: string) {
     setSelectedId(id);   // also resets selectedStageId via store action
     setMainTab("participants");
+  }
+
+  function handleDeleteTournament() {
+    if (!activeTournament) return;
+    if (!window.confirm(`Delete "${activeTournament.name}"?\n\nThis permanently removes its participants, stages, fixtures and results.`)) return;
+    setDeleteError("");
+    deleteTournament.mutate(activeTournament.id, {
+      onSuccess: () => { setSelectedId(""); },   // the effect above selects the next tournament
+      onError: (err) => setDeleteError(err instanceof Error ? err.message : "Could not delete tournament."),
+    });
+  }
+
+  function handleRemoveParticipant(id: string, name: string) {
+    if (!window.confirm(`Remove ${name}? Seeds below them move up by one.`)) return;
+    setDeleteError("");
+    deleteParticipant.mutate(id, {
+      onError: (err) => setDeleteError(err instanceof Error ? err.message : "Could not remove participant."),
+    });
   }
 
   async function handleAddParticipants(e: FormEvent) {
@@ -120,14 +147,21 @@ export function TournamentPage() {
           <option value="">Select a tournament...</option>
           {tournaments.map((t) => <option key={t.id} value={t.id}>{t.name} — {t.sportName}</option>)}
         </select>
+        {canManage && activeTournament && (
+          <button className="btn-cancel-score tournament-delete-btn" onClick={handleDeleteTournament}
+            disabled={deleteTournament.isPending} title="Delete this tournament and everything in it">
+            🗑 Delete tournament
+          </button>
+        )}
       </div>
+      {deleteError && <p className="form-error">{deleteError}</p>}
 
       {activeTournament && (
         <motion.div className="tournament-meta-bar" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           {[
             { label: "Sport", val: activeTournament.sportName },
             { label: "Format", val: FORMAT_LABELS[activeTournament.format] ?? activeTournament.format },
-            { label: "Status", val: activeTournament.status, cls: `status-badge status-${activeTournament.status.toLowerCase()}` },
+            { label: "Status", val: activeTournament.status.replace("_", " "), cls: `status-badge status-${activeTournament.status.toLowerCase()}` },
             { label: "Participants", val: loading ? "..." : String(participants.length) },
             { label: "Stages", val: String(stages.length) },
           ].map(({ label, val, cls }) => (
@@ -153,7 +187,7 @@ export function TournamentPage() {
             <AnimatePresence mode="wait">
               {mainTab === "participants" && (
                 <motion.div key="p-tab" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <form onSubmit={handleAddParticipants} className="action-card">
+                  {canManage && <form onSubmit={handleAddParticipants} className="action-card">
                     <h3 className="action-title">Add Participants</h3>
                     <textarea className="field-input field-textarea" value={bulkInput}
                       onChange={(e) => setBulkInput(e.target.value)}
@@ -162,7 +196,7 @@ export function TournamentPage() {
                     <button type="submit" className="btn-lime btn-full" disabled={addParticipants.isPending || !selectedId}>
                       {addParticipants.isPending ? "Adding..." : "Add Participants"}
                     </button>
-                  </form>
+                  </form>}
                   <div className="participant-list-compact">
                     {participants.length === 0 ? <p className="sidebar-empty">No participants yet.</p> : (
                       participants.map((p, i) => (
@@ -170,6 +204,10 @@ export function TournamentPage() {
                           initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.02 }}>
                           <span className="p-seed">S{p.seed ?? "—"}</span>
                           <span className="p-name">{p.name}</span>
+                          {canManage && stages.length === 0 && (
+                            <button className="lb-delete-btn p-delete" onClick={() => handleRemoveParticipant(p.id, p.name)}
+                              title="Remove participant">✕</button>
+                          )}
                         </motion.div>
                       ))
                     )}
@@ -178,7 +216,7 @@ export function TournamentPage() {
               )}
               {mainTab === "stages" && (
                 <motion.div key="s-tab" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <form onSubmit={handleGenerateStage} className="action-card">
+                  {canManage && <form onSubmit={handleGenerateStage} className="action-card">
                     <h3 className="action-title">Generate Stage</h3>
                     <input className="field-input" value={stageName} onChange={(e) => setStageName(e.target.value)}
                       placeholder="Stage name (optional)" />
@@ -207,7 +245,7 @@ export function TournamentPage() {
                       {generateStage.isPending ? "Generating..." : "⚡ Generate Stage"}
                     </button>
                     <p className="action-hint">Requires at least 2 participants.</p>
-                  </form>
+                  </form>}
                   {stages.length > 0 && (
                     <div className="stages-nav">
                       {stages.map((stage) => (

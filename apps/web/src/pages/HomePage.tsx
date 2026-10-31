@@ -58,7 +58,7 @@ export function HomePage() {
                 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                 whileHover={{ y: -3 }} onClick={() => setPage("tournament")}>
                 <div className="tc-top">
-                  <span className={`tc-status status-${t.status.toLowerCase()}`}>{t.status}</span>
+                  <span className={`tc-status status-${t.status.toLowerCase()}`}>{t.status.replace("_", " ")}</span>
                   <span className="tc-sport">{t.sportName}</span>
                 </div>
                 <h3 className="tc-name">{t.name}</h3>

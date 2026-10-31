@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildBracketFromFixtures, buildDEBracketFromFixtures } from "../bracketUtils";
 import { FORMAT_LABELS } from "../constants";
 import { useFixtures } from "../hooks/useQueries";
-import { useGeneratePlayoff } from "../hooks/useMutations";
+import { useDeleteStage, useGeneratePlayoff, useSetStageStatus } from "../hooks/useMutations";
+import { usePermissions } from "../hooks/usePermissions";
 import { useSocketSync } from "../hooks/useSocketSync";
 import { useAppStore } from "../store";
 import type {
@@ -30,8 +31,21 @@ export function StageDetailPanel({
 }) {
   const setSelectedStageId = useAppStore((s) => s.setSelectedStageId);
   const generatePlayoff = useGeneratePlayoff(tournamentId);
+  const setStatus = useSetStageStatus(tournamentId);
+  const deleteStage = useDeleteStage(tournamentId);
+  const [deleteError, setDeleteError] = useState("");
+
+  function handleDeleteStage() {
+    if (!window.confirm(`Delete stage "${stage.name}"?\n\nIts fixtures and all results entered in it will be lost.`)) return;
+    setDeleteError("");
+    deleteStage.mutate(stage.id, {
+      onSuccess: () => setSelectedStageId(null),   // TournamentPage then selects the first remaining stage
+      onError: (err) => setDeleteError(err instanceof Error ? err.message : "Could not delete stage."),
+    });
+  }
 
   useSocketSync(stage.id);
+  const { canManage, canScore } = usePermissions();
 
   const isLeaderboard = ["DIRECT_FINAL", "HEATS_PLUS_FINAL", "MULTI_EVENT_POINTS", "JUDGED_LEADERBOARD"].includes(stage.format);
   const isHeatsPlusFinal = stage.format === "HEATS_PLUS_FINAL";
@@ -112,8 +126,29 @@ export function StageDetailPanel({
       <div className="stage-detail-header">
         <h3 className="stage-detail-name">{stage.name}</h3>
         <span className="stage-format-chip">{FORMAT_LABELS[stage.format] ?? stage.format}</span>
-        <span className={`stage-status-badge status-${stage.status.toLowerCase()}`}>{stage.status}</span>
+        <span className={`stage-status-badge status-${stage.status.toLowerCase()}`}>{stage.status.replace("_", " ")}</span>
+        {isLeaderboard && canManage && (
+          <button
+            className="btn-cancel-score stage-close-btn stage-close-first"
+            disabled={setStatus.isPending}
+            onClick={() => setStatus.mutate({ stageId: stage.id, status: stage.status === "COMPLETED" ? "IN_PROGRESS" : "COMPLETED" })}
+            title="Leaderboard stages have no last match, so an organizer closes them when results are final."
+          >
+            {stage.status === "COMPLETED" ? "Reopen stage" : "Finish stage"}
+          </button>
+        )}
+        {canManage && (
+          <button
+            className={`btn-cancel-score stage-close-btn ${isLeaderboard ? "" : "stage-close-first"}`}
+            disabled={deleteStage.isPending}
+            onClick={handleDeleteStage}
+            title="Delete this stage and its results"
+          >
+            🗑 Delete stage
+          </button>
+        )}
       </div>
+      {deleteError && <p className="form-error" style={{ margin: "0 1rem" }}>{deleteError}</p>}
       <div className="tab-row">
         {tabs.map((tab) => (
           <button key={tab} className={`tab-btn ${activeTab === tab ? "active" : ""}`}
@@ -150,7 +185,7 @@ export function StageDetailPanel({
                   <span>{liveBracket.byeCount} byes</span>
                   <span style={{ color: "var(--accent-lime)", borderColor: "rgba(199,244,100,0.3)" }}>✓ Live — updates with scores</span>
                 </div>
-                <div className="bracket-scroll"><BracketCanvas bracket={liveBracket} onMatchClick={handleMatchClick} /></div>
+                <div className="bracket-scroll"><BracketCanvas bracket={liveBracket} onMatchClick={canScore ? handleMatchClick : undefined} /></div>
               </div>
             ) : (
               <div className="empty-state"><span className="empty-icon">🎯</span><p>No fixtures found. Generate this stage first.</p></div>
@@ -169,7 +204,7 @@ export function StageDetailPanel({
                   <span>{liveDEBracket.losersRounds.length} LB rounds</span>
                   <span style={{ color: "var(--accent-coral)", borderColor: "rgba(255,107,53,0.3)" }}>✓ Live — updates with scores</span>
                 </div>
-                <div className="bracket-scroll"><DEBracketCanvas bracket={liveDEBracket} onMatchClick={handleMatchClick} /></div>
+                <div className="bracket-scroll"><DEBracketCanvas bracket={liveDEBracket} onMatchClick={canScore ? handleMatchClick : undefined} /></div>
               </div>
             ) : (
               <div className="empty-state"><span className="empty-icon">🎯</span><p>No fixtures found. Generate this stage first.</p></div>
@@ -200,13 +235,16 @@ export function StageDetailPanel({
               <p style={{ fontSize: "0.84rem", color: "var(--text-dim)", marginBottom: "1.25rem" }}>
                 Generate a single-elimination playoff from the top N teams by standings.
               </p>
+              {!canManage && (
+                <p className="action-hint">Only organizers and admins can generate the playoff.</p>
+              )}
               <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
                 <div>
                   <label className="field-label">Top teams to qualify</label>
                   <input className="field-input" type="number" min="2" max="32" value={playoffCount}
                     onChange={(e) => setPlayoffCount(e.target.value)} style={{ maxWidth: "80px" }} />
                 </div>
-                <button className="btn-gold" onClick={handleGeneratePlayoff} disabled={generatePlayoff.isPending} style={{ marginTop: "1.4rem" }}>
+                <button className="btn-gold" onClick={handleGeneratePlayoff} disabled={generatePlayoff.isPending || !canManage} style={{ marginTop: "1.4rem" }}>
                   {generatePlayoff.isPending ? "Generating..." : "⚡ Generate Playoff"}
                 </button>
               </div>

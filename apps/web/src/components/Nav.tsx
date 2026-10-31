@@ -21,6 +21,7 @@ export function Nav() {
     { id: "tournament", label: "Tournament Hub" },
     { id: "sports", label: "Sports Catalog" },
     { id: "playground", label: "Bracket Lab" },
+    ...(user?.role === "ADMIN" ? [{ id: "admin" as Page, label: "Users" }] : []),
   ];
 
   return (

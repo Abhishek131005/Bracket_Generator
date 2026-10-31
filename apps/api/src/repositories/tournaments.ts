@@ -8,9 +8,11 @@ import { buildSwissFixtures, generateSwissRoundPairings } from "../engine/swiss.
 import { calculateStandings, calculateLeaderboard } from "../engine/standings.js";
 import { buildHeatsPlusFinalStructure, type HeatsPlusFinalStructure } from "../engine/heatsPlusFinal.js";
 import { buildMultiEventConfig, type MultiEventPointsStructure } from "../engine/multiEventPoints.js";
+import { deriveStageStatus, deriveTournamentStatus, isFixtureBasedFormat } from "../engine/status.js";
+import { DownstreamPlayedError, collectDescendantCodes, singleEliminationNext, winnerSide } from "../engine/progression.js";
 import { CompetitionFormat, RankingRule, Tournament } from "../types.js";
 
-type StageStatus = "DRAFT" | "PUBLISHED" | "COMPLETED";
+type StageStatus = "DRAFT" | "PUBLISHED" | "IN_PROGRESS" | "COMPLETED";
 type FixtureStatus = "SCHEDULED" | "PENDING" | "AUTO_ADVANCE" | "COMPLETED";
 
 export interface TournamentParticipant {
@@ -247,6 +249,64 @@ async function getNextSequence(tournamentId: string): Promise<number> {
     select: { sequence: true },
   });
   return stages.length > 0 ? Math.max(...stages.map((s: { sequence: number }) => s.sequence)) + 1 : 1;
+}
+
+// ── Status workflow ───────────────────────────────────────────────────────────
+// The rules live in engine/status.ts; these helpers load the data and save the result.
+
+/** Recompute a tournament's status from its stages. */
+export async function refreshTournamentStatus(tournamentId: string): Promise<void> {
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    include: { stages: { select: { status: true, format: true, sequence: true } } },
+  });
+  if (!tournament) return;
+
+  const next = deriveTournamentStatus({
+    current: tournament.status as Parameters<typeof deriveTournamentStatus>[0]["current"],
+    stages: tournament.stages,
+  });
+  if (next !== tournament.status) {
+    await prisma.tournament.update({ where: { id: tournamentId }, data: { status: next } });
+  }
+}
+
+/** Recompute a stage's status (and then its tournament's) after results change. */
+export async function refreshStageStatus(stageId: string): Promise<void> {
+  const stage = await prisma.stage.findUnique({
+    where: { id: stageId },
+    include: {
+      fixtures: { select: { code: true, status: true, leftParticipantId: true, rightParticipantId: true } },
+      _count: { select: { performanceEntries: true } },
+    },
+  });
+  if (!stage) return;
+
+  const next = deriveStageStatus({
+    format: stage.format,
+    current: stage.status as StageStatus,
+    fixtures: stage.fixtures,
+    performanceCount: stage._count.performanceEntries,
+  });
+  if (next !== stage.status) {
+    await prisma.stage.update({ where: { id: stageId }, data: { status: next } });
+  }
+  await refreshTournamentStatus(stage.tournamentId);
+}
+
+/**
+ * Organiser action for leaderboard-style stages (heats, direct final, judged, multi-event):
+ * there is no "last match", so a person decides when the stage is finished.
+ */
+export async function setStageStatus(stageId: string, status: "IN_PROGRESS" | "COMPLETED"): Promise<TournamentStage> {
+  const stage = await prisma.stage.findUnique({ where: { id: stageId } });
+  if (!stage) throw new Error("Stage not found.");
+  if (isFixtureBasedFormat(stage.format)) {
+    throw new Error("Match-based stages complete automatically once every match is finished.");
+  }
+  const updated = await prisma.stage.update({ where: { id: stageId }, data: { status } });
+  await refreshTournamentStatus(stage.tournamentId);
+  return mapStage(updated);
 }
 
 // ── Single Elimination ────────────────────────────────────────────────────────
@@ -594,6 +654,7 @@ export async function regenerateSwissRoundPairings(
     })),
   });
 
+  await refreshStageStatus(stageId);
   return listFixturesByStage(stageId);
 }
 
@@ -865,7 +926,51 @@ export async function listFixturesByStage(stageId: string): Promise<StageFixture
   return records.map(mapFixture);
 }
 
-type UpdateFixtureInput = { fixtureId: string; homeScore: number; awayScore: number };
+type UpdateFixtureInput = {
+  fixtureId: string;
+  homeScore: number;
+  awayScore: number;
+  /** Allow a correction that resets already-played downstream matches. */
+  confirmReset?: boolean;
+};
+
+const SLOT_PLACEHOLDER = "Winner of previous match";
+
+/** Winner of a fixture as it is stored right now (null if unplayed or drawn). */
+function storedWinnerId(fixture: any): string | null {
+  if (fixture.status !== "COMPLETED") return null;
+  const side = winnerSide(fixture.leftScore, fixture.rightScore);
+  return side === "left" ? fixture.leftParticipantId : side === "right" ? fixture.rightParticipantId : null;
+}
+
+/**
+ * Single elimination: the matches that currently carry this fixture's winner forward.
+ * The first entry is the next match; the walk continues only while those matches were played.
+ */
+function singleEliminationChain(fixture: any, all: any[]): { fixture: any; slot: "left" | "right" }[] {
+  const chain: { fixture: any; slot: "left" | "right" }[] = [];
+  let current = fixture;
+  for (;;) {
+    const next = singleEliminationNext(current.roundIndex, current.matchIndex);
+    const target = all.find((f) => f.roundIndex === next.roundIndex && f.matchIndex === next.matchIndex);
+    if (!target) break;
+    chain.push({ fixture: target, slot: next.slot });
+    if (target.status !== "COMPLETED") break;
+    current = target;
+  }
+  return chain;
+}
+
+const CLEARED_FIXTURE = {
+  leftParticipantId: null,
+  rightParticipantId: null,
+  leftLabel: null,
+  rightLabel: null,
+  leftScore: null,
+  rightScore: null,
+  autoAdvanceParticipantId: null,
+  status: "PENDING",
+};
 
 export async function updateFixtureResult(input: UpdateFixtureInput): Promise<StageFixture> {
   const fixture = await prisma.fixture.findUnique({
@@ -874,12 +979,42 @@ export async function updateFixtureResult(input: UpdateFixtureInput): Promise<St
   });
   if (!fixture) throw new Error("Fixture not found.");
 
-  const isEliminationStage =
-    fixture.stage.format === "SINGLE_ELIMINATION" ||
-    fixture.stage.format === "DOUBLE_ELIMINATION";
+  if (!fixture.leftParticipantId || !fixture.rightParticipantId) {
+    throw new Error("This match is not ready yet: both participants must be known before a score can be entered.");
+  }
+  if (fixture.status === "PENDING" || fixture.status === "AUTO_ADVANCE" || fixture.status === "CANCELLED") {
+    throw new Error(`This match cannot be scored while it is ${fixture.status === "AUTO_ADVANCE" ? "a bye" : fixture.status.toLowerCase()}.`);
+  }
+
+  const isSingleElimination = fixture.stage.format === "SINGLE_ELIMINATION";
+  const isDoubleElimination = fixture.stage.format === "DOUBLE_ELIMINATION";
+  const isEliminationStage = isSingleElimination || isDoubleElimination;
 
   if (isEliminationStage && input.homeScore === input.awayScore) {
     throw new Error("Draws are not allowed in elimination brackets.");
+  }
+
+  // ── Correction of an already-played match ───────────────────────────────────
+  // Changing only the scoreline is harmless. Changing the winner invalidates every match
+  // that winner (or loser, in double elimination) was already placed into: check first,
+  // before anything is written, then reset those matches after saving.
+  const previousWinner = storedWinnerId(fixture);
+  const newSide = winnerSide(input.homeScore, input.awayScore);
+  const newWinner = newSide === "left" ? fixture.leftParticipantId : newSide === "right" ? fixture.rightParticipantId : null;
+  const winnerChanged = isEliminationStage && previousWinner !== null && previousWinner !== newWinner;
+
+  let seChain: { fixture: any; slot: "left" | "right" }[] = [];
+  let deTargets: any[] = [];
+  if (winnerChanged) {
+    const all = await prisma.fixture.findMany({ where: { stageId: fixture.stageId } });
+    if (isSingleElimination) {
+      seChain = singleEliminationChain(fixture, all);
+    } else if (fixture.code) {
+      const codes = collectDescendantCodes(fixture.code, all as any[]);
+      deTargets = all.filter((f: any) => f.code && codes.has(f.code));
+    }
+    const affected = [...seChain.map((c) => c.fixture), ...deTargets].filter((f) => f.status === "COMPLETED").length;
+    if (affected > 0 && !input.confirmReset) throw new DownstreamPlayedError(affected);
   }
 
   const updated = await prisma.fixture.update({
@@ -891,13 +1026,42 @@ export async function updateFixtureResult(input: UpdateFixtureInput): Promise<St
     } as any,
   });
 
-  if (fixture.stage.format === "SINGLE_ELIMINATION") {
+  if (winnerChanged) {
+    if (isSingleElimination) {
+      // Empty the slot that held the old winner (and reset the match it was played in).
+      await prisma.$transaction(
+        seChain.map(({ fixture: target, slot }) =>
+          prisma.fixture.update({
+            where: { id: target.id },
+            data: {
+              ...(slot === "left"
+                ? { leftParticipantId: null, leftLabel: SLOT_PLACEHOLDER }
+                : { rightParticipantId: null, rightLabel: SLOT_PLACEHOLDER }),
+              leftScore: null,
+              rightScore: null,
+              autoAdvanceParticipantId: null,
+              status: "PENDING",
+            },
+          } as any)
+        )
+      );
+    } else {
+      // Wipe everything routed from this match; the recalculation below re-routes whatever is still valid.
+      await prisma.$transaction(
+        deTargets.map((target) => prisma.fixture.update({ where: { id: target.id }, data: CLEARED_FIXTURE } as any))
+      );
+    }
+  }
+
+  if (isSingleElimination && (previousWinner === null || winnerChanged)) {
     await advanceSingleEliminationWinner(fixture.stageId, updated as any, input);
   }
 
-  if (fixture.stage.format === "DOUBLE_ELIMINATION") {
+  if (isDoubleElimination) {
     await recalculateDoubleEliminationProgress(fixture.stageId);
   }
+
+  await refreshStageStatus(fixture.stageId);
 
   const refreshed = await prisma.fixture.findUnique({ where: { id: input.fixtureId } });
   return mapFixture(refreshed ?? updated);
@@ -920,18 +1084,16 @@ async function advanceSingleEliminationWinner(
 
   if (!winnerId || !winnerLabel) return;
 
-  // In SE, the next match in the next round is: matchIndex ceil(current/2)
-  const nextRoundIndex = fixture.roundIndex + 1;
-  const nextMatchIndex = Math.ceil(fixture.matchIndex / 2);
+  // The next match is round+1, matchIndex ceil(m/2); odd matches fill the left slot, even the right.
+  const next = singleEliminationNext(fixture.roundIndex, fixture.matchIndex);
 
   const nextFixture = allFixtures.find(
-    (f: any) => f.roundIndex === nextRoundIndex && f.matchIndex === nextMatchIndex
+    (f: any) => f.roundIndex === next.roundIndex && f.matchIndex === next.matchIndex
   );
 
   if (!nextFixture) return;
 
-  // Winner fills left slot if current matchIndex is odd, right if even.
-  const fillLeft = fixture.matchIndex % 2 === 1;
+  const fillLeft = next.slot === "left";
   const nextLeftId = fillLeft ? winnerId : nextFixture.leftParticipantId;
   const nextLeftLabel = fillLeft ? winnerLabel : nextFixture.leftLabel;
   const nextRightId = fillLeft ? nextFixture.rightParticipantId : winnerId;
@@ -1430,6 +1592,7 @@ export async function addPerformanceEntry(
       metadata: input.metadata ?? null,
     },
   });
+  await refreshStageStatus(input.stageId);
 
   return {
     id: entry.id,
@@ -1507,4 +1670,57 @@ export async function generateLeaderboardStage(
   });
 
   return { stage: mapStage(stage) };
+}
+
+// ── Deleting ──────────────────────────────────────────────────────────────────
+// Database cascades remove everything underneath (stages -> fixtures -> performance entries).
+
+export async function deleteTournament(tournamentId: string): Promise<void> {
+  const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true } });
+  if (!tournament) throw new Error("Tournament not found.");
+  await prisma.tournament.delete({ where: { id: tournamentId } });
+}
+
+/** Deletes a stage and returns the tournament it belonged to (its status may change as a result). */
+export async function deleteStage(stageId: string): Promise<{ tournamentId: string }> {
+  const stage = await prisma.stage.findUnique({ where: { id: stageId }, select: { id: true, tournamentId: true } });
+  if (!stage) throw new Error("Stage not found.");
+  await prisma.stage.delete({ where: { id: stageId } });
+  await refreshTournamentStatus(stage.tournamentId);
+  return { tournamentId: stage.tournamentId };
+}
+
+/**
+ * Removes a participant. Only allowed before any stage exists: once brackets or schedules
+ * have been generated, removing someone would leave holes in them.
+ * Remaining seeds are renumbered 1..n because the bracket builders assume contiguous seeds.
+ */
+export async function deleteParticipant(participantId: string): Promise<{ tournamentId: string }> {
+  const participant = await prisma.participant.findUnique({
+    where: { id: participantId },
+    select: { id: true, tournamentId: true },
+  });
+  if (!participant) throw new Error("Participant not found.");
+
+  const stageCount = await prisma.stage.count({ where: { tournamentId: participant.tournamentId } });
+  if (stageCount > 0) {
+    throw new Error("Participants can't be removed once stages exist. Delete the stages first.");
+  }
+
+  await prisma.participant.delete({ where: { id: participantId } });
+
+  // Close the gap. Going in ascending order, each new seed (<= old seed) is already free.
+  const remaining = await prisma.participant.findMany({
+    where: { tournamentId: participant.tournamentId },
+    orderBy: [{ seed: "asc" }, { createdAt: "asc" }],
+    select: { id: true, seed: true },
+  });
+  const updates = remaining
+    .map((p: { id: string; seed: number | null }, index: number) =>
+      p.seed === index + 1 ? null : prisma.participant.update({ where: { id: p.id }, data: { seed: index + 1 } })
+    )
+    .filter((u): u is NonNullable<typeof u> => u !== null);
+  if (updates.length > 0) await prisma.$transaction(updates);
+
+  return { tournamentId: participant.tournamentId };
 }

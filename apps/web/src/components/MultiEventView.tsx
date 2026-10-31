@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { type FormEvent, useMemo, useState } from "react";
 import { usePerformances } from "../hooks/useQueries";
 import { useAddPerformance, useDeletePerformance } from "../hooks/useMutations";
+import { usePermissions } from "../hooks/usePermissions";
 import type { MultiEventPointsStructure, TournamentParticipant, TournamentStage } from "../types";
 
 export function MultiEventView({
@@ -17,6 +18,7 @@ export function MultiEventView({
   const { data: entries = [], isLoading } = usePerformances(stage.id);
   const addPerformance = useAddPerformance(stage.id);
   const deletePerformance = useDeletePerformance(stage.id);
+  const { canScore } = usePermissions();
 
   const [selectedParticipantId, setSelectedParticipantId] = useState("");
   const [selectedEventId, setSelectedEventId] = useState(events[0]?.id ?? "");
@@ -82,7 +84,7 @@ export function MultiEventView({
         <span>{entries.length} scores recorded</span>
       </div>
 
-      <form onSubmit={handleAdd} className="me-entry-form">
+      {canScore && <form onSubmit={handleAdd} className="me-entry-form">
         <select className="field-select" value={selectedParticipantId}
           onChange={(e) => setSelectedParticipantId(e.target.value)}>
           <option value="">Participant...</option>
@@ -98,8 +100,8 @@ export function MultiEventView({
         <button type="submit" className="btn-lime" disabled={addPerformance.isPending}>
           {addPerformance.isPending ? "..." : "+ Add"}
         </button>
-      </form>
-      {error && <p className="form-error">{error}</p>}
+      </form>}
+      {canScore && error && <p className="form-error">{error}</p>}
 
       {isLoading ? (
         <div className="empty-state"><span className="empty-icon">⏳</span><p>Loading...</p></div>
@@ -127,7 +129,7 @@ export function MultiEventView({
                         {entry ? (
                           <span className="me-score-cell">
                             <strong>{entry.metricValue}</strong>
-                            <button className="me-del-btn" onClick={() => deletePerformance.mutate(entry.id)} title="Remove">✕</button>
+                            {canScore && <button className="me-del-btn" onClick={() => deletePerformance.mutate(entry.id)} title="Remove">✕</button>}
                           </span>
                         ) : (
                           <span className="me-score-empty">—</span>

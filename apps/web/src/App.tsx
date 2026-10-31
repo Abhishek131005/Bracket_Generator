@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect } from "react";
 import { Nav } from "./components/Nav";
+import { AdminPage } from "./pages/AdminPage";
 import { AuthPage } from "./pages/AuthPage";
+import { refreshSession } from "./api";
 import { CreatePage } from "./pages/CreatePage";
 import { HomePage } from "./pages/HomePage";
 import { PlaygroundPage } from "./pages/PlaygroundPage";
@@ -11,7 +13,7 @@ import { useAppStore } from "./store";
 import { useSports, useTournaments } from "./hooks/useQueries";
 
 // Pages that require the user to be logged in
-const PROTECTED_PAGES = new Set(["create", "tournament"]);
+const PROTECTED_PAGES = new Set(["create", "tournament", "admin"]);
 
 export function App() {
   const page = useAppStore((s) => s.page);
@@ -24,6 +26,16 @@ export function App() {
       setPage("login");
     }
   }, [page, user, setPage]);
+
+  // On load, re-read the account from the server so a role change made by an admin (or an
+  // expired token) is picked up. A 401 here signs the user out via the shared error handling.
+  const hasToken = useAppStore((s) => !!s.token);
+  useEffect(() => {
+    if (!hasToken) return;
+    refreshSession()
+      .then((r) => useAppStore.getState().login(r.token, r.user))
+      .catch(() => { /* offline or server error: keep the current session */ });
+  }, [hasToken]);
 
   const { error: sportsError } = useSports();
   const { error: tournamentsError } = useTournaments();
@@ -56,6 +68,7 @@ export function App() {
           {page === "tournament" && <TournamentPage key="tournament" />}
           {page === "sports"     && <SportsPage key="sports" />}
           {page === "playground" && <PlaygroundPage key="playground" />}
+          {page === "admin"      && <AdminPage key="admin" />}
         </AnimatePresence>
       </main>
       <footer className="app-footer">

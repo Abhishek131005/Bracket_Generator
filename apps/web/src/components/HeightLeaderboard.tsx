@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { type FormEvent, useMemo, useState } from "react";
 import { usePerformances } from "../hooks/useQueries";
 import { useAddPerformance, useDeletePerformance } from "../hooks/useMutations";
+import { usePermissions } from "../hooks/usePermissions";
 import { formatHeight, rankHeightEntries } from "../utils";
 import type { TournamentParticipant } from "../types";
 
@@ -15,6 +16,7 @@ export function HeightLeaderboard({
   const { data: entries = [], isLoading } = usePerformances(stageId);
   const addPerformance = useAddPerformance(stageId);
   const deletePerformance = useDeletePerformance(stageId);
+  const { canScore } = usePermissions();
 
   const [selectedParticipantId, setSelectedParticipantId] = useState("");
   const [height, setHeight] = useState("");
@@ -60,7 +62,7 @@ export function HeightLeaderboard({
   return (
     <div className="leaderboard-view">
       {/* Entry form */}
-      <form onSubmit={handleAdd} className="height-entry-form">
+      {canScore && <form onSubmit={handleAdd} className="height-entry-form">
         <div className="height-form-row">
           <select
             className="field-select perf-select"
@@ -122,7 +124,7 @@ export function HeightLeaderboard({
         <p className="height-form-hint">
           IAAF countback rule: highest height → fewest fails at max → fewest total fails → fewest total attempts.
         </p>
-      </form>
+      </form>}
 
       {/* Leaderboard */}
       {isLoading ? (
@@ -166,11 +168,13 @@ export function HeightLeaderboard({
                 <span className="height-cb-sep">/</span>
                 <span className="height-cb-val">{entry.totalAttempts}</span>
               </span>
-              <button
-                className="lb-delete-btn"
-                onClick={() => deletePerformance.mutate(entry.entryId)}
-                title="Remove"
-              >✕</button>
+              {canScore ? (
+                <button
+                  className="lb-delete-btn"
+                  onClick={() => deletePerformance.mutate(entry.entryId)}
+                  title="Remove"
+                >✕</button>
+              ) : <span />}
             </motion.div>
           ))}
           </AnimatePresence>

@@ -6,6 +6,7 @@ import {
   computeJudgedFinalScore,
   rankHeightEntries,
   buildJudgedRows,
+  rankBestAttempts,
 } from "./utils.js";
 import type { PerformanceEntry } from "./types.js";
 
@@ -227,5 +228,48 @@ describe("buildJudgedRows", () => {
     ];
     const rows = buildJudgedRows(entries as PerformanceEntry[]);
     assert.equal(rows[0].judgeScores[0].judgeId, "Judge X");
+  });
+});
+
+describe("rankBestAttempts", () => {
+  it("keeps only the fastest attempt per athlete for time (ASC)", () => {
+    const entries = [
+      makeEntry("e1", "p1", "Alice", 12.4),
+      makeEntry("e2", "p1", "Alice", 11.9),
+      makeEntry("e3", "p2", "Bob", 12.0),
+    ];
+    const rows = rankBestAttempts(entries, "ASC");
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].entry.id, "e2");
+    assert.equal(rows[0].attempts, 2);
+    assert.equal(rows[1].entry.participantName, "Bob");
+    assert.equal(rows[1].rank, 2);
+  });
+
+  it("keeps the longest attempt per athlete for distance (DESC)", () => {
+    const entries = [
+      makeEntry("e1", "p1", "Alice", 14.2),
+      makeEntry("e2", "p1", "Alice", 15.1),
+      makeEntry("e3", "p1", "Alice", 13.0),
+    ];
+    const rows = rankBestAttempts(entries, "DESC");
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].entry.metricValue, 15.1);
+    assert.equal(rows[0].attempts, 3);
+  });
+
+  it("gives equal results a shared place and skips the next one", () => {
+    const entries = [
+      makeEntry("e1", "p1", "Alice", 10),
+      makeEntry("e2", "p2", "Bob", 10),
+      makeEntry("e3", "p3", "Cara", 11),
+    ];
+    const rows = rankBestAttempts(entries, "ASC");
+    assert.deepEqual(rows.map((r) => r.rank), [1, 1, 3]);
+    assert.deepEqual(rows.map((r) => r.entry.participantName), ["Alice", "Bob", "Cara"]);
+  });
+
+  it("returns an empty list for no entries", () => {
+    assert.deepEqual(rankBestAttempts([], "ASC"), []);
   });
 });

@@ -175,3 +175,42 @@ export function buildJudgedRows(
     return { ...row, rank };
   });
 }
+
+// ── Time / distance / points leaderboard ──────────────────────────────────────
+
+export interface RankedAttempt {
+  entry: PerformanceEntry;
+  rank: number;
+  attempts: number;
+}
+
+/**
+ * One row per athlete: their best attempt (lowest for ASC e.g. time, highest for DESC e.g. distance),
+ * ranked with shared places for equal results (1, 1, 3 …). `attempts` is how many results
+ * the athlete has recorded in total.
+ */
+export function rankBestAttempts(entries: PerformanceEntry[], direction: "ASC" | "DESC"): RankedAttempt[] {
+  const better = (a: number, b: number) => (direction === "ASC" ? a < b : a > b);
+
+  const best = new Map<string, { entry: PerformanceEntry; attempts: number }>();
+  for (const entry of entries) {
+    const current = best.get(entry.participantId);
+    if (!current) {
+      best.set(entry.participantId, { entry, attempts: 1 });
+    } else {
+      current.attempts += 1;
+      if (better(entry.metricValue, current.entry.metricValue)) current.entry = entry;
+    }
+  }
+
+  const sorted = [...best.values()].sort((a, b) => {
+    const diff = direction === "ASC" ? a.entry.metricValue - b.entry.metricValue : b.entry.metricValue - a.entry.metricValue;
+    return diff !== 0 ? diff : a.entry.participantName.localeCompare(b.entry.participantName);
+  });
+
+  let rank = 1;
+  return sorted.map((row, i) => {
+    if (i > 0 && row.entry.metricValue !== sorted[i - 1].entry.metricValue) rank = i + 1;
+    return { entry: row.entry, rank, attempts: row.attempts };
+  });
+}

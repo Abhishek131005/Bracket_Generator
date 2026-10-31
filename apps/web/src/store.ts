@@ -50,8 +50,16 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: "zemo-auth",
-      // Only persist auth — navigation and selection are ephemeral
-      partialize: (state) => ({ token: state.token, user: state.user }),
+      // Persist auth plus "where I was", so a browser refresh doesn't dump you on Home.
+      // (There is no router, so this is what stands in for URL state.)
+      partialize: (state) => ({
+        token: state.token,
+        user: state.user,
+        // never restore onto a login/register form
+        page: state.page === "login" || state.page === "register" ? "home" : state.page,
+        selectedTournamentId: state.selectedTournamentId,
+        selectedStageId: state.selectedStageId,
+      }),
     }
   )
 );

@@ -21,11 +21,11 @@ function mapUser(record: { id: string; email: string; name: string; role: Role; 
   };
 }
 
+/** Public sign-up. The role is not an input: new accounts are always VIEWERs. */
 export async function registerUser(input: {
   email: string;
   password: string;
   name: string;
-  role?: Role;
 }): Promise<PublicUser> {
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) throw new Error("EMAIL_TAKEN");
@@ -36,7 +36,7 @@ export async function registerUser(input: {
       email: input.email,
       passwordHash,
       name: input.name,
-      role: input.role ?? "VIEWER",
+      role: "VIEWER",
     },
   });
   return mapUser(user);
@@ -53,6 +53,25 @@ export async function verifyCredentials(input: {
   if (!valid) throw new Error("INVALID_CREDENTIALS");
 
   return mapUser(user);
+}
+
+export async function listUsers(): Promise<PublicUser[]> {
+  const users = await prisma.user.findMany({ orderBy: [{ role: "asc" }, { createdAt: "asc" }] });
+  return users.map(mapUser);
+}
+
+export async function setUserRole(userId: string, role: Role): Promise<PublicUser> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("USER_NOT_FOUND");
+
+  // never leave the system without an administrator
+  if (user.role === "ADMIN" && role !== "ADMIN") {
+    const admins = await prisma.user.count({ where: { role: "ADMIN" } });
+    if (admins <= 1) throw new Error("LAST_ADMIN");
+  }
+
+  const updated = await prisma.user.update({ where: { id: userId }, data: { role } });
+  return mapUser(updated);
 }
 
 export async function getUserById(id: string): Promise<PublicUser | null> {

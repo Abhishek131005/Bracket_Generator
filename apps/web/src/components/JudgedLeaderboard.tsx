@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { type FormEvent, useMemo, useState } from "react";
 import { usePerformances } from "../hooks/useQueries";
 import { useAddPerformance, useDeletePerformance } from "../hooks/useMutations";
+import { usePermissions } from "../hooks/usePermissions";
 import { buildJudgedRows } from "../utils";
 import type { TournamentParticipant } from "../types";
 
@@ -15,6 +16,7 @@ export function JudgedLeaderboard({
   const { data: entries = [], isLoading } = usePerformances(stageId);
   const addPerformance = useAddPerformance(stageId);
   const deletePerformance = useDeletePerformance(stageId);
+  const { canScore } = usePermissions();
 
   const [selectedParticipantId, setSelectedParticipantId] = useState("");
   const [judgeId, setJudgeId] = useState("");
@@ -64,7 +66,7 @@ export function JudgedLeaderboard({
   return (
     <div className="leaderboard-view">
       {/* Entry form */}
-      <form onSubmit={handleAdd} className="judged-entry-form">
+      {canScore && <form onSubmit={handleAdd} className="judged-entry-form">
         <div className="judged-form-row">
           <select
             className="field-select perf-select"
@@ -98,7 +100,7 @@ export function JudgedLeaderboard({
         </div>
         {error && <p className="form-error">{error}</p>}
         <p className="height-form-hint">Final score = average of all judge scores. Add one row per judge per participant.</p>
-      </form>
+      </form>}
 
       {/* Leaderboard */}
       {isLoading ? (
@@ -139,11 +141,13 @@ export function JudgedLeaderboard({
                   row.judgeScores.map((js) => (
                     <span key={js.entryId} className="judge-score-pill" title={js.judgeId}>
                       <span className="judge-score-val">{js.score}</span>
-                      <button
-                        className="judge-score-del"
-                        onClick={() => deletePerformance.mutate(js.entryId)}
-                        title={`Remove ${js.judgeId}`}
-                      >✕</button>
+                      {canScore && (
+                        <button
+                          className="judge-score-del"
+                          onClick={() => deletePerformance.mutate(js.entryId)}
+                          title={`Remove ${js.judgeId}`}
+                        >✕</button>
+                      )}
                     </span>
                   ))
                 )}

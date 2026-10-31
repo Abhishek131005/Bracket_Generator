@@ -108,7 +108,7 @@ export function BracketCanvas({
             const isAuto = match.status === "AUTO_ADVANCE";
             const isDone = match.status === "COMPLETED";
             const isTBD = !match.left.participantName || !match.right.participantName;
-            const canClick = !!onMatchClick && !isAuto && !isTBD;
+            const canClick = !!onMatchClick && !isAuto && !isTBD && match.status !== "PENDING";
             const isHovered = hoveredId === match.id;
             const isOnPath = winnerPath.has(match.id);
             const extMatch = match as any;

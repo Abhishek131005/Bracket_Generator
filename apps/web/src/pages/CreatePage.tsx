@@ -4,12 +4,14 @@ import { SportPickerModal } from "../components/SportPickerModal";
 import { FORMAT_LABELS, VIEW_COLORS } from "../constants";
 import { useSports } from "../hooks/useQueries";
 import { useCreateTournament } from "../hooks/useMutations";
+import { usePermissions } from "../hooks/usePermissions";
 import { useAppStore } from "../store";
 
 export function CreatePage() {
   const setPage = useAppStore((s) => s.setPage);
   const { data: sports = [] } = useSports();
   const createTournament = useCreateTournament();
+  const { canManage } = usePermissions();
 
   const [tournamentName, setTournamentName] = useState("");
   const [selectedSportId, setSelectedSportId] = useState<number | "">("");
@@ -79,6 +81,9 @@ export function CreatePage() {
                 {selectedSport.notes && <p className="spb-note">{selectedSport.notes}</p>}
               </motion.div>
             )}
+            {!canManage && (
+              <p className="form-error">Only organizers and admins can create tournaments. Sign in with an organizer account to continue.</p>
+            )}
             {error && <p className="form-error">{error}</p>}
             {successName && (
               <motion.div className="form-success" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
@@ -86,7 +91,7 @@ export function CreatePage() {
                 <button type="button" className="link-btn" onClick={() => setPage("tournament")}>Go to Tournament Hub →</button>
               </motion.div>
             )}
-            <button type="submit" className="btn-primary btn-full" disabled={createTournament.isPending}>
+            <button type="submit" className="btn-primary btn-full" disabled={createTournament.isPending || !canManage}>
               {createTournament.isPending ? "Creating..." : "Create Tournament →"}
             </button>
           </form>

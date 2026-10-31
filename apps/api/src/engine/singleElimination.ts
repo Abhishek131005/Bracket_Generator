@@ -36,6 +36,20 @@ function nextPowerOfTwo(value: number): number {
   return 2 ** Math.ceil(Math.log2(value));
 }
 
+/**
+ * Standard bracket seed placement, listed as consecutive pairs per round-1 match.
+ * 8 slots -> [1,8, 4,5, 2,7, 3,6]: seeds 1 and 2 sit in opposite halves and can
+ * only meet in the final; 3/4 can only meet 1/2 in the semi-finals.
+ */
+export function standardSeedOrder(slots: number): number[] {
+  let order = [1, 2];
+  while (order.length < slots) {
+    const size = order.length * 2;
+    order = order.flatMap((seed) => [seed, size + 1 - seed]);
+  }
+  return order.slice(0, slots);
+}
+
 function getRoundTitle(roundSize: number, isFinalRound: boolean, isSemiRound: boolean): string {
   if (isFinalRound) {
     return "Final";
@@ -77,9 +91,11 @@ export function buildSingleEliminationBracket(participantsInput: Array<{ name: s
   const roundOneMatches: BracketMatch[] = [];
   const matchesInRoundOne = slots / 2;
 
+  const seedOrder = standardSeedOrder(slots);
+
   for (let matchNumber = 0; matchNumber < matchesInRoundOne; matchNumber += 1) {
-    const leftSeed = matchNumber + 1;
-    const rightSeed = slots - matchNumber;
+    const leftSeed = seedOrder[matchNumber * 2];
+    const rightSeed = seedOrder[matchNumber * 2 + 1];
     const leftParticipant = participants[leftSeed - 1];
     const rightParticipant = participants[rightSeed - 1];
 
@@ -108,7 +124,7 @@ export function buildSingleEliminationBracket(participantsInput: Array<{ name: s
 
   rounds.push({
     roundIndex: 1,
-    title: getRoundTitle(slots, false, slots === 4),
+    title: getRoundTitle(slots, slots === 2, slots === 4),
     matches: roundOneMatches
   });
 
@@ -145,6 +161,22 @@ export function buildSingleEliminationBracket(participantsInput: Array<{ name: s
     });
 
     roundIndex += 1;
+  }
+
+  // Place bye winners straight into round 2 (same rule the repository uses when a
+  // result is saved: odd matchIndex feeds the left slot, even feeds the right slot).
+  if (rounds.length > 1) {
+    for (const match of roundOneMatches) {
+      if (match.status !== "AUTO_ADVANCE") continue;
+      const winner = match.left.participantName ? match.left : match.right;
+      const target = rounds[1].matches[Math.ceil(match.matchIndex / 2) - 1];
+      const slot = match.matchIndex % 2 === 1 ? "left" : "right";
+      target[slot] = { seed: winner.seed, participantName: winner.participantName };
+    }
+
+    for (const match of rounds[1].matches) {
+      match.status = match.left.seed !== null && match.right.seed !== null ? "SCHEDULED" : "PENDING";
+    }
   }
 
   return {

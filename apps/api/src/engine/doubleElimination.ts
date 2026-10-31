@@ -1,3 +1,5 @@
+import { standardSeedOrder } from "./singleElimination.js";
+
 /**
  * Double Elimination Bracket Engine
  *
@@ -69,9 +71,11 @@ export function buildDoubleEliminationBracket(
 
   const r1Matches: DEMatch[] = [];
   const matchesInR1 = slots / 2;
+  // Standard placement (8 slots: 1v8, 4v5, 2v7, 3v6) so seeds 1 and 2 are on opposite sides
+  const seedOrder = standardSeedOrder(slots);
   for (let i = 0; i < matchesInR1; i++) {
-    const leftSeed = i + 1;
-    const rightSeed = slots - i;
+    const leftSeed = seedOrder[i * 2];
+    const rightSeed = seedOrder[i * 2 + 1];
     const left = normalized[leftSeed - 1] ?? null;
     const right = normalized[rightSeed - 1] ?? null;
     const isBye = Boolean(left) !== Boolean(right);

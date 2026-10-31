@@ -26,6 +26,10 @@ import {
   regenerateSwissRoundPairings,
   addPerformanceEntry,
   deletePerformanceEntry,
+  setStageStatus,
+  deleteTournament,
+  deleteStage,
+  deleteParticipant,
 } from "../api";
 
 type AnyGeneratedStage =
@@ -97,7 +101,10 @@ export function useGenerateStage(tournamentId: string) {
         return generateJudgedLeaderboardStageForTournament(tournamentId, stageName);
       throw new Error(`Unknown format: ${format}`);
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.stages(tournamentId) }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.stages(tournamentId) });
+      qc.invalidateQueries({ queryKey: queryKeys.tournaments });   // tournament status may change
+    },
   });
 }
 
@@ -128,15 +135,20 @@ export function useUpdateFixture(stageId: string) {
       fixtureId,
       homeScore,
       awayScore,
+      confirmReset,
     }: {
       fixtureId: string;
       homeScore: number;
       awayScore: number;
-    }) => updateFixtureResult(fixtureId, homeScore, awayScore),
+      confirmReset?: boolean;
+    }) => updateFixtureResult(fixtureId, homeScore, awayScore, confirmReset),
     onSuccess: () => {
       // Invalidate fixtures AND standings (scores affect both)
       qc.invalidateQueries({ queryKey: queryKeys.fixtures(stageId) });
       qc.invalidateQueries({ queryKey: queryKeys.standings(stageId) });
+      // A result can move the stage (and tournament) to IN_PROGRESS / COMPLETED.
+      qc.invalidateQueries({ queryKey: ["stages"] });
+      qc.invalidateQueries({ queryKey: queryKeys.tournaments });
     },
   });
 }
@@ -169,7 +181,11 @@ export function useAddPerformance(stageId: string) {
       fixtureId?: string;
       metadata?: string;
     }) => addPerformanceEntry(stageId, participantId, metricValue, unit, fixtureId, metadata),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.performances(stageId) }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.performances(stageId) });
+      qc.invalidateQueries({ queryKey: ["stages"] });
+      qc.invalidateQueries({ queryKey: queryKeys.tournaments });
+    },
   });
 }
 
@@ -178,5 +194,48 @@ export function useDeletePerformance(stageId: string) {
   return useMutation({
     mutationFn: (entryId: string) => deletePerformanceEntry(entryId),
     onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.performances(stageId) }); },
+  });
+}
+
+// ── Stage status (organiser closes / reopens a leaderboard stage) ─────────────
+
+export function useSetStageStatus(tournamentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ stageId, status }: { stageId: string; status: "IN_PROGRESS" | "COMPLETED" }) =>
+      setStageStatus(stageId, status),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.stages(tournamentId) });
+      qc.invalidateQueries({ queryKey: queryKeys.tournaments });
+    },
+  });
+}
+
+// ── Deleting ──────────────────────────────────────────────────────────────────
+
+export function useDeleteTournament() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (tournamentId: string) => deleteTournament(tournamentId),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.tournaments }); },
+  });
+}
+
+export function useDeleteStage(tournamentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (stageId: string) => deleteStage(stageId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.stages(tournamentId) });
+      qc.invalidateQueries({ queryKey: queryKeys.tournaments });   // status may fall back to DRAFT
+    },
+  });
+}
+
+export function useDeleteParticipant(tournamentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (participantId: string) => deleteParticipant(participantId),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.participants(tournamentId) }); },
   });
 }

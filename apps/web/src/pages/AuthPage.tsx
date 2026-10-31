@@ -10,7 +10,6 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<"ORGANIZER" | "REFEREE" | "VIEWER">("ORGANIZER");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -21,7 +20,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
     try {
       const result = mode === "login"
         ? await loginAccount({ email, password })
-        : await registerAccount({ email, password, name, role });
+        : await registerAccount({ email, password, name });
       login(result.token, result.user);
       setPage("home");
     } catch (err) {
@@ -97,17 +96,10 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
 
           {mode === "register" && (
             <div className="auth-field">
-              <label className="auth-label">Role</label>
-              <select
-                className="field-select"
-                value={role}
-                onChange={(e) => setRole(e.target.value as typeof role)}
-              >
-                <option value="ORGANIZER">Organizer — manage tournaments &amp; stages</option>
-                <option value="REFEREE">Referee — enter scores &amp; results</option>
-                <option value="VIEWER">Viewer — read only</option>
-              </select>
-              <p className="auth-hint">Admins are created directly in the database.</p>
+              <p className="auth-hint">
+                New accounts start as <strong>Viewers</strong> (read-only). An admin can upgrade you to
+                Organizer or Referee.
+              </p>
             </div>
           )}
 

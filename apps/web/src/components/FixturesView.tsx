@@ -1,7 +1,9 @@
 import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import { useFixtures } from "../hooks/useQueries";
-import { useUpdateFixture, useRegenerateSwissPairings } from "../hooks/useMutations";
+import { useRegenerateSwissPairings } from "../hooks/useMutations";
+import { useSaveScore } from "../hooks/useSaveScore";
+import { usePermissions } from "../hooks/usePermissions";
 
 export function FixturesView({ stageId, isSwiss, onFixturesChanged }: {
   stageId: string;
@@ -9,8 +11,9 @@ export function FixturesView({ stageId, isSwiss, onFixturesChanged }: {
   onFixturesChanged?: () => void;
 }) {
   const { data: fixtures = [], isLoading } = useFixtures(stageId);
-  const updateFixture = useUpdateFixture(stageId);
+  const saveScore = useSaveScore(stageId);
   const regeneratePairings = useRegenerateSwissPairings(stageId);
+  const { canManage, canScore } = usePermissions();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [homeScore, setHomeScore] = useState("");
@@ -27,9 +30,9 @@ export function FixturesView({ stageId, isSwiss, onFixturesChanged }: {
     const hs = parseInt(homeScore); const as_ = parseInt(awayScore);
     if (isNaN(hs) || isNaN(as_) || hs < 0 || as_ < 0) { setError("Enter valid non-negative scores."); return; }
     setError("");
-    updateFixture.mutate({ fixtureId, homeScore: hs, awayScore: as_ }, {
+    saveScore.save(fixtureId, hs, as_, {
       onSuccess: () => { setEditingId(null); onFixturesChanged?.(); },
-      onError: (err) => setError(err instanceof Error ? err.message : "Could not save."),
+      onError: setError,
     });
   }
 
@@ -56,7 +59,7 @@ export function FixturesView({ stageId, isSwiss, onFixturesChanged }: {
           <div key={roundIdx} className="fixtures-round">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.6rem" }}>
               <h4 className="fixtures-round-title">Round {roundIdx}</h4>
-              {isSwiss && isTBD && allPrevRoundsDone && (
+              {isSwiss && isTBD && allPrevRoundsDone && canManage && (
                 <button className="btn-cyan" style={{ fontSize: "0.72rem", padding: "0.3rem 0.7rem" }}
                   onClick={() => handleSwissRePair(roundIdx)} disabled={regeneratePairings.isPending}>
                   {regeneratePairings.isPending ? "Pairing..." : "⚡ Generate Pairings"}
@@ -97,12 +100,12 @@ export function FixturesView({ stageId, isSwiss, onFixturesChanged }: {
                     <div className="fixture-actions">
                       {isEditing ? (
                         <>
-                          <button className="btn-save-score" onClick={() => handleSave(f.id)} disabled={updateFixture.isPending}>
-                            {updateFixture.isPending ? "..." : "✓ Save"}
+                          <button className="btn-save-score" onClick={() => handleSave(f.id)} disabled={saveScore.isPending}>
+                            {saveScore.isPending ? "..." : "✓ Save"}
                           </button>
                           <button className="btn-cancel-score" onClick={() => setEditingId(null)}>✕</button>
                         </>
-                      ) : (
+                      ) : canScore ? (
                         <button className="btn-enter-score"
                           onClick={() => {
                             setEditingId(f.id);
@@ -112,7 +115,7 @@ export function FixturesView({ stageId, isSwiss, onFixturesChanged }: {
                           disabled={f.status === "AUTO_ADVANCE" || f.status === "PENDING" || isTBDMatch}>
                           {isDone ? "Edit" : "Enter Score"}
                         </button>
-                      )}
+                      ) : null}
                       <span className={`fixture-status-badge status-${f.status.toLowerCase()}`}>
                         {f.status === "COMPLETED" ? "FT" : f.status === "AUTO_ADVANCE" ? "BYE" : isTBDMatch ? "TBD" : "—"}
                       </span>

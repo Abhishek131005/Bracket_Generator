@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { useUpdateFixture } from "../hooks/useMutations";
+import { useSaveScore } from "../hooks/useSaveScore";
 
 export interface BracketMatchInfo {
   fixtureId: string;
@@ -21,7 +21,7 @@ export function BracketScoreModal({
   const [homeScore, setHomeScore] = useState("");
   const [awayScore, setAwayScore] = useState("");
   const [error, setError] = useState("");
-  const updateFixture = useUpdateFixture(match?.stageId ?? "");
+  const saveScore = useSaveScore(match?.stageId ?? "");
 
   useEffect(() => {
     if (match) {
@@ -40,13 +40,7 @@ export function BracketScoreModal({
       return;
     }
     setError("");
-    updateFixture.mutate(
-      { fixtureId: match.fixtureId, homeScore: hs, awayScore: as_ },
-      {
-        onSuccess: onClose,
-        onError: (err) => setError(err instanceof Error ? err.message : "Could not save score."),
-      }
-    );
+    saveScore.save(match.fixtureId, hs, as_, { onSuccess: onClose, onError: setError });
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -111,9 +105,9 @@ export function BracketScoreModal({
               <button
                 className="btn-lime"
                 onClick={handleSave}
-                disabled={updateFixture.isPending}
+                disabled={saveScore.isPending}
               >
-                {updateFixture.isPending ? "Saving..." : "✓ Save Score"}
+                {saveScore.isPending ? "Saving..." : "✓ Save Score"}
               </button>
               <button className="btn-cancel-score" onClick={onClose}>Cancel</button>
             </div>

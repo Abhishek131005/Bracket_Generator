@@ -32,15 +32,29 @@ function authHeaders(extra?: Record<string, string>): Record<string, string> {
   };
 }
 
-async function parseResponse<T>(response: Response): Promise<T> {
-  if (response.status === 401) {
+/** An API error that keeps the server's machine-readable code (e.g. DOWNSTREAM_PLAYED). */
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number, public readonly code?: string) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/**
+ * `isAuthRequest` marks login/register calls: a 401 there means "wrong credentials",
+ * not "your session expired", so it must not sign the user out.
+ */
+async function parseResponse<T>(response: Response, isAuthRequest = false): Promise<T> {
+  if (response.status === 401 && !isAuthRequest) {
     useAppStore.getState().logout();
     throw new Error("Your session has expired. Please log in again.");
   }
   if (!response.ok) {
-    let errorMessage = "Request failed.";
+    let errorMessage = response.status === 403 ? "You don't have permission to do that with your role." : "Request failed.";
+    let code: string | undefined;
     try {
       const errorBody = await response.json();
+      code = typeof errorBody.code === "string" ? errorBody.code : undefined;
       if (Array.isArray(errorBody.details) && errorBody.details.length > 0) {
         errorMessage = errorBody.details.join(" ");
       } else if (errorBody.message) {
@@ -50,7 +64,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
       const errorText = await response.text();
       errorMessage = errorText || `HTTP ${response.status}`;
     }
-    throw new Error(errorMessage);
+    throw new ApiError(errorMessage, response.status, code);
   }
   return response.json() as Promise<T>;
 }
@@ -66,14 +80,13 @@ export async function registerAccount(payload: {
   email: string;
   password: string;
   name: string;
-  role?: string;
 }): Promise<AuthResponse> {
   const res = await fetch("/api/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return parseResponse<AuthResponse>(res);
+  return parseResponse<AuthResponse>(res, true);
 }
 
 export async function loginAccount(payload: {
@@ -85,7 +98,35 @@ export async function loginAccount(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  return parseResponse<AuthResponse>(res, true);
+}
+
+/** Re-issues the token from the database so a role change by an admin is picked up. */
+export async function refreshSession(): Promise<AuthResponse> {
+  const res = await fetch("/api/auth/refresh", { method: "POST", headers: authHeaders() });
   return parseResponse<AuthResponse>(res);
+}
+
+// ── Admin: user management ────────────────────────────────────────────────────
+
+export interface AdminUser extends AuthUser {
+  createdAt: string;
+}
+
+export async function fetchUsers(): Promise<AdminUser[]> {
+  const res = await fetch("/api/admin/users", { headers: authHeaders() });
+  const body = await parseResponse<ApiListResponse<AdminUser>>(res);
+  return body.data;
+}
+
+export async function updateUserRole(userId: string, role: AuthUser["role"]): Promise<AdminUser> {
+  const res = await fetch(`/api/admin/users/${userId}/role`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({ role }),
+  });
+  const body = await parseResponse<ApiItemResponse<AdminUser>>(res);
+  return body.data;
 }
 
 // ── Sports & Tournaments (read — no auth required) ────────────────────────────
@@ -314,14 +355,43 @@ export async function generateJudgedLeaderboardStageForTournament(
 export async function updateFixtureResult(
   fixtureId: string,
   homeScore: number,
-  awayScore: number
+  awayScore: number,
+  confirmReset = false
 ): Promise<StageFixture> {
   const res = await fetch(`/api/fixtures/${fixtureId}/result`, {
     method: "PATCH",
     headers: authHeaders(),
-    body: JSON.stringify({ homeScore, awayScore }),
+    body: JSON.stringify({ homeScore, awayScore, ...(confirmReset ? { confirmReset: true } : {}) }),
   });
   const body = await parseResponse<ApiItemResponse<StageFixture>>(res);
+  return body.data;
+}
+
+export async function deleteTournament(tournamentId: string): Promise<void> {
+  const res = await fetch(`/api/tournaments/${tournamentId}`, { method: "DELETE", headers: authHeaders() });
+  await parseResponse<{ message: string }>(res);
+}
+
+export async function deleteStage(stageId: string): Promise<void> {
+  const res = await fetch(`/api/stages/${stageId}`, { method: "DELETE", headers: authHeaders() });
+  await parseResponse<{ message: string }>(res);
+}
+
+export async function deleteParticipant(participantId: string): Promise<void> {
+  const res = await fetch(`/api/participants/${participantId}`, { method: "DELETE", headers: authHeaders() });
+  await parseResponse<{ message: string }>(res);
+}
+
+export async function setStageStatus(
+  stageId: string,
+  status: "IN_PROGRESS" | "COMPLETED"
+): Promise<TournamentStage> {
+  const res = await fetch(`/api/stages/${stageId}/status`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({ status }),
+  });
+  const body = await parseResponse<ApiItemResponse<TournamentStage>>(res);
   return body.data;
 }
 
